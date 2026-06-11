@@ -50,7 +50,8 @@ footer { color: #666; font-size: .72rem; margin-top: 24px; line-height: 1.6; }
 
 def render(df) -> str:
     """スキャン結果DataFrameをモバイル向けHTMLにレンダリングする"""
-    now = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    jst = dt.timezone(dt.timedelta(hours=9))
+    now = dt.datetime.now(jst).strftime("%Y-%m-%d %H:%M")
     parts = [
         "<!DOCTYPE html><html lang='ja'><head><meta charset='utf-8'>",
         "<meta name='viewport' content='width=device-width, initial-scale=1'>",
