@@ -1,0 +1,37 @@
+# スイング候補レポートの定期実行（GitHub Actions・PCの起動不要）
+# 平日 朝7:00 JST（寄り前）と 夕方16:30 JST（引け後）にスキャンしてVercelへ公開する
+name: swing-report
+
+on:
+  schedule:
+    # JST = UTC+9。月〜金 7:00 JST = 日〜木 22:00 UTC
+    - cron: "0 22 * * 0-4"
+    # 月〜金 16:30 JST = 月〜金 7:30 UTC
+    - cron: "30 7 * * 1-5"
+  workflow_dispatch: {}  # 手動実行も可能
+
+jobs:
+  scan-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERCEL_ORG_ID: team_vVRxxz1tdCVHPR8ZnUpYUR7O
+      VERCEL_PROJECT_ID: prj_W8JC3zES4kCbWyfNRAr1WpFNd3ni
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 依存パッケージのインストール
+        run: pip install -r requirements-ci.txt
+
+      - name: スキャン実行・レポート生成
+        run: python tools/publish_report.py
+
+      - name: Vercelへデプロイ
+        run: npx vercel@latest deploy --prod --yes --cwd swing-report --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

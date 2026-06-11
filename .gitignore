@@ -1,0 +1,40 @@
+# 秘密情報・個人データ（絶対にGitHubにpushしない）
+.env
+*.env
+
+# ポートフォリオCSV・個人データ
+data/portfolio.csv
+data/cache/
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 仮想環境
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Vercel / generated artifacts
+.vercel/
+swing-report/index.html
+data/*.log

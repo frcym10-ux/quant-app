@@ -1,0 +1,25 @@
+# クオンツ投資分析アプリ 依存パッケージ
+
+# UI
+streamlit>=1.35.0
+
+# データ取得
+jquants-api-client>=0.1.0   # J-Quants API（日本株）
+yfinance>=0.2.40             # 米国株・ETF
+
+# テクニカル指標は modules/indicators.py で pandas/numpy により自前計算
+# （pandas-ta 0.3.x はPyPIから削除済み・0.4.x はPython3.12+が必要なため不使用）
+
+# データ処理
+pandas>=2.0.0
+numpy>=1.26.0
+scipy>=1.12.0
+
+# グラフ
+plotly>=5.20.0
+
+# 環境変数
+python-dotenv>=1.0.0
+
+# その他ユーティリティ
+requests>=2.31.0
