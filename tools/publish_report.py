@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from modules import swing_scanner  # noqa: E402
+from modules import holdings_monitor, notifier, swing_scanner  # noqa: E402
 
 PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "..", "swing-report")
 
@@ -35,13 +35,22 @@ h2 { font-size: 1.05rem; margin: 20px 0 8px; border-left: 4px solid #4a9eff; pad
 .name { font-weight: 700; font-size: 1.0rem; }
 .mkt { font-size: .72rem; color: #aaa; background: #2a3142; border-radius: 4px; padding: 1px 6px; }
 .score { font-weight: 700; color: #4a9eff; }
-.setup { display: inline-block; font-size: .78rem; margin: 6px 0; padding: 2px 8px;
+.setup { display: inline-block; font-size: .85rem; font-weight: 700; margin: 6px 0; padding: 3px 10px;
          border-radius: 999px; background: #24426b; color: #bcd9ff; }
 .nums { font-size: .85rem; color: #ccc; margin: 4px 0; }
 .nums b { color: #fff; }
 .up { color: #26a69a; } .down { color: #ef5350; }
-.sl { color: #ef5350; } .tp { color: #26a69a; }
-.reason { font-size: .8rem; color: #9ab; margin-top: 6px; line-height: 1.5; }
+.why { font-size: .85rem; color: #cdd6e0; margin: 8px 0; line-height: 1.6; }
+.actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 10px 0; }
+.act { border-radius: 8px; padding: 8px; font-size: .78rem; line-height: 1.4; }
+.act .lbl { display: block; font-weight: 700; font-size: .72rem; margin-bottom: 3px; }
+.act.buy { background: #14301f; border: 1px solid #1f6b3f; }
+.act.buy .lbl { color: #4cd791; }
+.act.stop { background: #341818; border: 1px solid #7a2a2a; }
+.act.stop .lbl { color: #ff7676; }
+.act.take { background: #1a2740; border: 1px solid #2a4a7a; }
+.act.take .lbl { color: #7fb4ff; }
+.invest { font-size: .78rem; color: #9ab; margin-top: 6px; line-height: 1.5; }
 .theme { font-size: .72rem; color: #777; }
 .empty { color: #888; padding: 12px; }
 footer { color: #666; font-size: .72rem; margin-top: 24px; line-height: 1.6; }
@@ -63,25 +72,27 @@ def render(df) -> str:
     ]
 
     def card(r, watch=False) -> str:
+        from modules import explain
+        e = explain.explain_candidate(r.to_dict())
         cls = "card watch" if watch else "card"
         chg = float(r["前日比%"])
         chg_cls = "up" if chg >= 0 else "down"
-        import pandas as pd
-        has_shares = pd.notna(r["株数目安"]) and r["株数目安"]
-        shares = f" ／ 株数目安 <b>{int(r['株数目安']):,}</b>株" if has_shares else ""
         return (
             f"<div class='{cls}'>"
             f"<div class='head'><span class='name'>{r['コード']} {r['銘柄名']}</span>"
             f"<span class='mkt'>{r['市場']}</span>"
             f"<span class='score'>スコア {r['スコア']:.0f}</span></div>"
             f"<div class='theme'>{r['テーマ']}</div>"
-            f"<span class='setup'>{r['セットアップ']}</span>"
+            f"<span class='setup'>{e['headline']}</span>"
             f"<div class='nums'>終値 <b>{r['終値']:,}</b> "
-            f"<span class='{chg_cls}'>{chg:+.2f}%</span>"
-            f" ／ RSI {r['RSI']:.0f} ／ ADX {r['ADX']:.0f} ／ ATR {r['ATR%']}%</div>"
-            f"<div class='nums'>SL <b class='sl'>{r['SL']:,}</b> ／ "
-            f"TP <b class='tp'>{r['TP']:,}</b>{shares}</div>"
-            f"<div class='reason'>💡 {r['根拠']}</div></div>"
+            f"<span class='{chg_cls}'>{chg:+.2f}%</span> ／ {e['risk']}</div>"
+            f"<div class='why'>📖 {e['why']}</div>"
+            f"<div class='actions'>"
+            f"<div class='act buy'><span class='lbl'>買う目安</span>{e['buy']}</div>"
+            f"<div class='act stop'><span class='lbl'>撤退（損切り）</span>{e['stop']}</div>"
+            f"<div class='act take'><span class='lbl'>利確の目安</span>{e['take']}</div>"
+            f"</div>"
+            f"<div class='invest'>💰 {e['invest']}</div></div>"
         )
 
     if df.empty:
@@ -99,11 +110,9 @@ def render(df) -> str:
         parts.extend(card(r, watch=True) for _, r in watch.iterrows())
 
     parts.append(
-        "<footer>セットアップ: トレンド押し目（ADX≧25でEMA12へ押し）／ "
-        "平均回帰（ADX&lt;20でBB・Keltner下限＋RSI≦35）／ "
-        "ブレイクアウト（BB上限超え＋出来高1.5倍）。"
-        "流動性・ボラティリティでフィルター済み。SL=終値−2×ATR、TP=終値＋3×ATR。<br>"
-        "⚠️ 本レポートは参考情報であり売買の推奨ではありません。</footer>"
+        "<footer>「買う目安・撤退ライン・利確の目安」は、その銘柄の値動きの大きさから自動計算した参考値です。"
+        "買う前に各カードの内容を確認し、撤退ライン（損切り）を必ず決めてからエントリーしてください。<br>"
+        "⚠️ 本レポートは参考情報であり売買の推奨ではありません。最終判断はご自身の調査で。</footer>"
         "</body></html>"
     )
     return "".join(parts)
@@ -116,6 +125,13 @@ def main() -> None:
     with open(out, "w", encoding="utf-8") as f:
         f.write(render(df))
     print(f"レポート生成: {out}（候補 {len(df)}件）")
+
+    # 保有銘柄サインのチェックと自分宛メール通知（公開レポートには含めない）
+    try:
+        holdings = holdings_monitor.scan_holdings()
+        notifier.send_if_needed(df, holdings)
+    except Exception as e:
+        print(f"通知処理でエラー（レポート生成は成功）: {e}")
 
     if "--deploy" in sys.argv:
         # 一度 `vercel login` 済みであれば自動デプロイできる

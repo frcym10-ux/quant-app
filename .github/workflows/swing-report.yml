@@ -28,8 +28,16 @@ jobs:
       - name: 依存パッケージのインストール
         run: pip install -r requirements-ci.txt
 
-      - name: スキャン実行・レポート生成
+      - name: スキャン実行・レポート生成・メール通知
         run: python tools/publish_report.py
+        env:
+          # 保有銘柄サイン用（portfolio.csvはリポジトリに含めないためシークレットで渡す）
+          HOLDINGS_JSON: ${{ secrets.HOLDINGS_JSON }}
+          # 候補が出た日の自分宛メール通知用（未設定なら通知はスキップ）
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          NOTIFY_TO: ${{ secrets.NOTIFY_TO }}
+          REPORT_URL: https://swing-report.vercel.app
 
       - name: Vercelへデプロイ
         run: npx vercel@latest deploy --prod --yes --cwd swing-report --token "$VERCEL_TOKEN"

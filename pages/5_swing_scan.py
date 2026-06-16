@@ -10,7 +10,7 @@ import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
-from modules import swing_scanner, universe
+from modules import explain, swing_scanner, universe
 
 st.set_page_config(page_title="スイング候補スキャン", page_icon="🛰️", layout="wide")
 st.title("🛰️ スイング候補 自動スキャン")
@@ -58,23 +58,27 @@ if cands.empty:
     st.info("セットアップ完成銘柄はありません。監視リストを確認してください。")
 else:
     for _, r in cands.iterrows():
+        e = explain.explain_candidate(r.to_dict())
         with st.container(border=True):
-            c1, c2, c3 = st.columns([3, 2, 2])
-            with c1:
-                st.markdown(f"**{r['コード']} {r['銘柄名']}**（{r['市場']}）")
-                st.caption(f"{r['テーマ']}")
-                st.markdown(f"📌 {r['セットアップ']} ｜ スコア **{r['スコア']:.0f}**")
-            with c2:
+            top1, top2 = st.columns([3, 1])
+            with top1:
+                st.markdown(f"### {r['コード']} {r['銘柄名']}　<small>（{r['市場']}・{r['テーマ']}）</small>",
+                            unsafe_allow_html=True)
+                st.markdown(f"**{e['headline']}**　{e['risk']}")
+            with top2:
                 st.metric("終値", f"{r['終値']:,}", f"{r['前日比%']:+.2f}%")
-                st.caption(f"RSI {r['RSI']:.0f} ／ ADX {r['ADX']:.0f} ／ ATR {r['ATR%']}%")
-            with c3:
-                st.markdown(f"SL: **{r['SL']:,}** ／ TP: **{r['TP']:,}**")
-                if pd.notna(r["株数目安"]) and r["株数目安"]:
-                    st.caption(
-                        f"株数目安 {r['株数目安']:,}株"
-                        f"（元手{settings.SWING_CAPITAL/10000:.0f}万円・リスク{settings.RISK_PERCENT:.0%}）"
-                    )
-            st.markdown(f"💡 {r['根拠']}")
+
+            st.markdown(f"📖 **なぜ候補か**：{e['why']}")
+
+            a1, a2, a3 = st.columns(3)
+            a1.success(f"**買う目安**\n\n{e['buy']}")
+            a2.error(f"**撤退ライン（損切り）**\n\n{e['stop']}")
+            a3.info(f"**利確の目安**\n\n{e['take']}")
+
+            st.caption(f"💰 {e['invest']}")
+            with st.expander("✅ 買う前のチェックリスト"):
+                for item in e["checklist"]:
+                    st.markdown(f"- {item}")
 
 # ========== 監視リスト ==========
 st.markdown(f"### 👀 監視リスト（{len(watch)}件）")
@@ -87,10 +91,12 @@ else:
         use_container_width=True, hide_index=True,
     )
 
-st.caption(
-    "セットアップ定義 ― トレンド押し目: ADX≧25の上昇トレンドでEMA12へ押し ／ "
-    "平均回帰: ADX<20でBB・Keltner下限タッチ＋RSI≦35 ／ "
-    "ブレイクアウト: BB上限超え＋出来高1.5倍。"
-    "流動性（売買代金）とボラティリティ（ATR1〜8%）でフィルター済み。"
-)
-st.caption("⚠️ このアプリは投資判断の参考情報提供を目的としており、売買の推奨ではありません。")
+with st.expander("ℹ️ 3つの買い場タイプとは？（やさしい説明）"):
+    st.markdown(
+        "- **押し目買い**：上がり続けている勢いの強い銘柄が、一息ついて少し下がったところを買う（順張り）\n"
+        "- **逆張り（反発狙い）**：横ばい相場で下がりすぎた銘柄が、元の水準に戻る動きを狙って安値を拾う\n"
+        "- **ブレイクアウト**：もみ合いを上に抜けて、出来高を伴って勢いがついた銘柄に乗る（順張り）\n\n"
+        "いずれも、売買が活発で（流動性）、値動きが極端すぎない銘柄に自動で絞り込んでいます。"
+        "各候補の「撤退ライン」「利確の目安」は、その銘柄の値動きの大きさ（ATR）から自動計算しています。"
+    )
+st.caption("⚠️ このアプリは投資判断の参考情報提供を目的としており、売買の推奨ではありません。最終判断はご自身の調査で行ってください。")

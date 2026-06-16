@@ -38,3 +38,4 @@ Thumbs.db
 .vercel/
 swing-report/index.html
 data/*.log
+_*.json

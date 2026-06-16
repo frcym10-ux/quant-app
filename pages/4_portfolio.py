@@ -9,10 +9,26 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from modules import data_fetcher, indicators, screener
+from modules import data_fetcher, holdings_monitor, indicators, screener
 
 st.set_page_config(page_title="ポートフォリオ概況", page_icon="💼", layout="wide")
 st.title("💼 ポートフォリオ概況")
+
+# ========== 保有銘柄の売り時・買い増しサイン ==========
+st.subheader("🔔 保有銘柄のサイン")
+with st.spinner("保有銘柄をチェック中..."):
+    signals = holdings_monitor.scan_holdings()
+if signals.empty:
+    st.success("いま売り時・買い増しのサインが出ている保有銘柄はありません（保有継続でOK）。")
+else:
+    for _, s in signals.iterrows():
+        pl = f"（含み損益 {s['含み損益%']:+.0f}%）" if pd.notna(s["含み損益%"]) else ""
+        box = st.error if s["サイン"] == "売り検討" else st.info
+        box(
+            f"{s['絵文字']} **{s['コード']} {s['銘柄名']} — {s['サイン']}**{pl}　"
+            f"終値 {s['終値']:,}（{s['前日比%']:+.2f}%）\n\n{s['解説']}"
+        )
+st.markdown("---")
 
 PORTFOLIO_CSV = os.path.join(os.path.dirname(__file__), "..", "data", "portfolio.csv")
 
