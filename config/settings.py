@@ -13,9 +13,22 @@ JQUANTS_API_KEY = os.getenv("JQUANTS_API_KEY", "") or os.getenv("JQUANTS_REFRESH
 JQUANTS_REFRESH_TOKEN = JQUANTS_API_KEY  # 後方互換
 
 # ========== 口座設定 ==========
-ACCOUNT_CAPITAL = float(os.getenv("ACCOUNT_CAPITAL", 1_000_000))  # 運用資金（円）
-RISK_PERCENT = float(os.getenv("RISK_PERCENT", 0.01))              # 1トレードリスク率
-SWING_CAPITAL = float(os.getenv("SWING_CAPITAL", 2_500_000))      # スイングトレード元手（円）
+ACCOUNT_CAPITAL = float(os.getenv("ACCOUNT_CAPITAL", 1_000_000))  # 保有資産の口座資金（円）
+RISK_PERCENT = float(os.getenv("RISK_PERCENT", 0.01))              # 保有資産側の1トレードリスク率
+
+# ========== スイングトレード設定 ==========
+SWING_CAPITAL = float(os.getenv("SWING_CAPITAL", 3_000_000))       # スイング元手（円）
+SWING_RISK_PERCENT = float(os.getenv("SWING_RISK_PERCENT", 0.02))  # スイング1トレードのリスク率（2%）
+
+# ========== 目標設定 ==========
+GOAL_PROFIT = float(os.getenv("GOAL_PROFIT", 1_000_000))           # 目標利益（円）
+GOAL_START = os.getenv("GOAL_START", "2026-06-16")                 # 目標開始日
+GOAL_DEADLINE = os.getenv("GOAL_DEADLINE", "2026-12-31")           # 目標期限
+MONTHLY_STOP_PCT = float(os.getenv("MONTHLY_STOP_PCT", 0.10))      # 月間ストップ（元手比・この損失で一旦停止）
+
+# 期待値の事前見積り用（ジャーナルに実績が溜まるまでの仮定値）
+ASSUMED_WIN_RATE = float(os.getenv("ASSUMED_WIN_RATE", 0.50))      # 仮定勝率
+REWARD_RISK = 1.5  # 損益比（利確3ATR / 損切り2ATR = 1.5）。最低この勝率(=1/(1+1.5)=40%)で損益分岐
 
 # ========== テクニカル指標パラメータ ==========
 # MACD

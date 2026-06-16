@@ -119,20 +119,29 @@ def explain_candidate(row: dict) -> dict:
     stop = f"{sl:,.2f}{cur}（今より約 {loss_pct:.1f}%）まで下がったら撤退（損切り）"
     take = f"{tp:,.2f}{cur}（今より約 +{gain_pct:.1f}%）まで上がったら利確を検討"
 
-    # --- 投資金額・想定リスク ---
-    risk_yen = settings.SWING_CAPITAL * settings.RISK_PERCENT
+    # --- 投資金額・想定リスク・期待値 ---
     shares = row.get("株数目安")
-    if is_jp and shares:
-        invest_amount = price * int(shares)
+    risk_yen = row.get("リスク額") or (settings.SWING_CAPITAL * settings.SWING_RISK_PERCENT)
+    invest_yen = row.get("投資額")
+    cur_note = "" if is_jp else "（米国株・円換算）"
+    if shares and invest_yen:
         invest = (
-            f"目安 {int(shares):,}株（約 {invest_amount:,.0f}円）。"
-            f"もし撤退ラインに当たっても損失が約 {risk_yen:,.0f}円 に収まるよう株数を調整しています。"
+            f"目安 {int(shares):,}株 ＝ 約 {invest_yen:,.0f}円{cur_note}。"
+            f"もし撤退ラインに当たっても損失は約 {risk_yen:,.0f}円（元手の{settings.SWING_RISK_PERCENT:.0%}）に収まるよう株数を調整しています。"
         )
     else:
         invest = (
-            f"1回の損失を投資元手の {settings.RISK_PERCENT:.0%}（約 {risk_yen:,.0f}円）に抑えるなら、"
-            f"買付額 ＝ {risk_yen:,.0f}円 ÷ {abs(loss_pct):.1f}% ≒ {risk_yen/ (abs(loss_pct)/100):,.0f}円 が上限の目安。"
+            f"1回の損失を元手の{settings.SWING_RISK_PERCENT:.0%}（約 {risk_yen:,.0f}円）に抑える株数で。"
         )
+
+    # 期待値（想定勝率ベースの目安）: 期待R = 勝率×損益比 -(1-勝率)
+    w, b = settings.ASSUMED_WIN_RATE, settings.REWARD_RISK
+    exp_r = w * b - (1 - w)
+    exp_yen = exp_r * risk_yen
+    edge = (
+        f"📊 期待値の目安：1回 約 {exp_yen:+,.0f}円"
+        f"（勝率{w:.0%}・利益:損失={b:g}:1 と仮定。利確で約+{risk_yen*b:,.0f}円／損切りで約-{risk_yen:,.0f}円）"
+    )
 
     # --- なぜ候補か（指標のやさしい要約） ---
     why = setup_desc + " " + rsi_comment(float(row["RSI"])) + " ／ " + adx_comment(float(row["ADX"]))
@@ -158,6 +167,7 @@ def explain_candidate(row: dict) -> dict:
         "take": take,
         "risk": f"{risk_emoji} 値動き：{risk_lbl}（1日あたり平均 約{atr_pct:.1f}%動く）",
         "invest": invest,
+        "edge": edge,
         "checklist": checklist,
         "one_liner": one_liner,
     }

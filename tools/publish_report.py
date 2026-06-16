@@ -92,7 +92,8 @@ def render(df) -> str:
             f"<div class='act stop'><span class='lbl'>撤退（損切り）</span>{e['stop']}</div>"
             f"<div class='act take'><span class='lbl'>利確の目安</span>{e['take']}</div>"
             f"</div>"
-            f"<div class='invest'>💰 {e['invest']}</div></div>"
+            f"<div class='invest'>💰 {e['invest']}</div>"
+            f"<div class='invest'>{e['edge']}</div></div>"
         )
 
     if df.empty:

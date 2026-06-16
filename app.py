@@ -34,13 +34,23 @@ with col2:
     if st.button("チャートへ →", use_container_width=True):
         st.switch_page("pages/2_chart.py")
 
-st.markdown("### 🛰️ スイング候補 自動スキャン")
-st.markdown(
-    "AI・半導体／量子コンピュータ／宇宙・防衛／生活インフラのテーマ別ユニバース約70銘柄（日米）を一括分析し、"
-    "エントリー候補と監視銘柄をスコア順に提示します。朝夕の銘柄選定はここから。"
-)
-if st.button("スイング候補スキャンへ →", use_container_width=True, type="primary"):
-    st.switch_page("pages/5_swing_scan.py")
+gcol1, gcol2 = st.columns(2)
+with gcol1:
+    st.markdown("### 🛰️ スイング候補 自動スキャン")
+    st.markdown(
+        "テーマ別ユニバース約70銘柄（日米）を一括分析し、"
+        "エントリー候補と監視銘柄をスコア順に提示。朝夕の銘柄選定はここから。"
+    )
+    if st.button("スイング候補スキャンへ →", use_container_width=True, type="primary"):
+        st.switch_page("pages/5_swing_scan.py")
+with gcol2:
+    st.markdown("### 🎯 目標ダッシュボード")
+    st.markdown(
+        "年内+100万円に向けた進捗・必要ペース・実現可能性をひと目で。"
+        "トレードを記録すると勝率・期待値が自動集計されます。"
+    )
+    if st.button("目標ダッシュボードへ →", use_container_width=True):
+        st.switch_page("pages/6_goal.py")
 
 st.markdown("---")
 col_a, col_b = st.columns(2)

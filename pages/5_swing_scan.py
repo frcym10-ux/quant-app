@@ -76,7 +76,12 @@ else:
             a3.info(f"**利確の目安**\n\n{e['take']}")
 
             st.caption(f"💰 {e['invest']}")
-            with st.expander("✅ 買う前のチェックリスト"):
+            st.caption(e["edge"])
+            bcol1, bcol2 = st.columns([1, 4])
+            if bcol1.button("📝 記録に回す", key=f"rec_{r['コード']}_{r['市場']}"):
+                st.session_state["journal_prefill"] = r.to_dict()
+                st.switch_page("pages/6_goal.py")
+            with bcol2.expander("✅ 買う前のチェックリスト"):
                 for item in e["checklist"]:
                     st.markdown(f"- {item}")
 

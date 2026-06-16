@@ -43,6 +43,30 @@ def _yf_symbol(code: str) -> str:
     return f"{code}.T" if _is_jp(code) else code
 
 
+_FX_CACHE: dict[str, float] = {}
+
+
+def get_usdjpy() -> float:
+    """USD/JPYの最新レートを取得する（失敗時は概算155で代替）"""
+    if "rate" in _FX_CACHE:
+        return _FX_CACHE["rate"]
+    rate = 155.0
+    try:
+        import yfinance as yf
+        fx = yf.download("JPY=X", period="5d", auto_adjust=True, progress=False)
+        if fx is not None and not fx.empty:
+            close = fx["Close"]
+            if hasattr(close, "columns"):  # MultiIndex列のDataFrameなら1列目を使う
+                close = close.iloc[:, 0]
+            val = float(close.dropna().iloc[-1])
+            if 80 < val < 300:
+                rate = val
+    except Exception:
+        pass
+    _FX_CACHE["rate"] = rate
+    return rate
+
+
 def batch_fetch(codes: list[str], period: str = SCAN_PERIOD) -> dict[str, pd.DataFrame]:
     """yfinanceで全銘柄の日足を一括取得して {コード: DataFrame} で返す"""
     import yfinance as yf
@@ -166,12 +190,14 @@ def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
     if setup is None:
         return None
 
-    # --- リスク管理（SL/TP・株数） ---
+    # --- リスク管理（SL/TP・株数・リスク額・投資額） ---
     sl, tp = risk_manager.calc_sl_tp(close, float(latest["atr"]), direction)
-    shares = risk_manager.calc_position_size(
-        account=settings.SWING_CAPITAL, risk_pct=settings.RISK_PERCENT,
-        entry=close, sl=sl,
-    ) if is_jp else None  # 米国株はUSD建てのため株数は参考外
+    fx = 1.0 if is_jp else get_usdjpy()
+    risk_budget_yen = settings.SWING_CAPITAL * settings.SWING_RISK_PERCENT
+    per_share_risk = close - sl  # 1株あたりの値幅（通貨建て）
+    shares = int(risk_budget_yen / fx / per_share_risk) if per_share_risk > 0 else 0
+    risk_yen = round(shares * per_share_risk * fx, 0)        # 実際の円リスク額
+    invest_yen = round(shares * close * fx, 0)               # 円換算の投資額
 
     change_pct = (close / float(prev["close"]) - 1) * 100
     return {
@@ -190,6 +216,8 @@ def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
         "SL": round(sl, 2),
         "TP": round(tp, 2),
         "株数目安": int(shares) if shares else None,
+        "リスク額": risk_yen,
+        "投資額": invest_yen,
         "根拠": " ／ ".join(reasons),
     }
 
