@@ -2,6 +2,9 @@
 app.py
 クオンツ投資分析アプリ - エントリーポイント
 """
+import os
+import sys
+
 import streamlit as st
 
 st.set_page_config(
@@ -10,6 +13,11 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+sys.path.insert(0, os.path.dirname(__file__))
+from modules import auth  # noqa: E402
+
+auth.require_auth()
 
 st.title("📈 クオンツ投資分析アプリ")
 st.markdown("---")

@@ -1,0 +1,79 @@
+# スマホで全機能を使う：Streamlit Community Cloud デプロイ手順
+
+このアプリ（Streamlit）をクラウドで動かし、**スマホのブラウザから全機能**（チャート・
+スクリーニング・スイングスキャン・バックテスト等）を使うための手順です。
+**完全無料**。閲覧を自分のメールだけに限定し、さらにアプリ内パスワードで二重に保護します。
+
+> 静的レポート（`swing-report.vercel.app`）は今までどおり「朝夕の見るだけダイジェスト」として併用できます。
+> こちらのStreamlit版は「対話的に全機能を使う本体」です。
+
+---
+
+## 全体像（セキュリティ二層）
+
+1. **Community Cloudの閲覧者制限**：アプリを限定公開にし、招待したメール（=あなたのGoogle/GitHub）だけがログイン可能。
+   Google/GitHubログインなので、**そのアカウントにパスキーを設定していればパスキーでログイン**できます。
+2. **アプリ内パスワードゲート**（任意）：`APP_PASSWORD` を設定すると、ログイン後にもう一段パスワードを要求（多層防御）。
+
+---
+
+## 手順
+
+### 1. 事前準備
+- GitHubアカウント（このリポジトリ `frcym10-ux/quant-app` の所有者でOK）
+- 無料の Streamlit アカウント
+
+### 2. Streamlit Community Cloud にデプロイ
+1. https://share.streamlit.io/ にGitHubでサインイン
+2. **「Create app」→「Deploy a public app from GitHub」**
+3. 設定：
+   - Repository: `frcym10-ux/quant-app`
+   - Branch: `master`
+   - **Main file path: `app.py`**
+4. **「Advanced settings」→「Secrets」** に、`/.streamlit/secrets.toml.example` を参考に必要な値を貼り付け（次節）
+5. **Deploy** を押す（数分でビルド完了）
+
+### 3. Secrets（秘密情報）の設定
+`.streamlit/secrets.toml.example` の中身をベースに、Advanced settings の Secrets 欄へ貼り付けます。
+root階層のキーは自動で環境変数になり、`config/settings.py` の `os.getenv` がそのまま読み取ります。
+
+最低限おすすめ：
+```toml
+APP_PASSWORD = "好きなパスワード"          # アプリ内ゲート（任意だが推奨）
+ACCOUNT_CAPITAL = "1000000"
+SWING_CAPITAL = "3000000"
+HOLDINGS_JSON = '[{"code":"7011","name":"三菱重工業","avg_cost":1500}]'  # 保有銘柄（任意）
+# JQUANTS_REFRESH_TOKEN = "JQT-..."        # 日本株をJ-Quantsで取りたい場合のみ
+```
+> J-Quantsキーが無くても、日本株は yfinance（`XXXX.T`）経由で取得できるため主要機能は動きます。
+
+### 4. 閲覧者を自分のメールに限定（重要）
+1. デプロイ後、アプリ管理画面の **「Settings」→「Sharing」**
+2. **「Who can view this app」を限定公開**にし、自分のメール（Googleアカウント等）を許可リストに追加
+3. これで、招待した人以外はログインできません。スマホでは初回にGoogleログイン（パスキー可）→（設定していれば）アプリ内パスワード、で全機能が使えます。
+
+### 5. スマホでの使い方
+1. デプロイされたURL（`https://<your-app>.streamlit.app`）をスマホで開く
+2. Google/GitHubでログイン（パスキー対応）
+3. `APP_PASSWORD` を設定していれば入力
+4. 左上のメニュー（≡）から各画面へ。**ホーム画面に追加**しておくとアプリのように使えます
+
+---
+
+## 注意点・既知の制約
+
+- **トレード記録（ジャーナル）の永続化**：Community Cloudのファイルシステムは一時的で、再起動・再デプロイで
+  `data/trades.csv` が消えます。**読む系の機能（チャート・スクリーナー・バックテスト・スイングスキャン）は問題なし**ですが、
+  「目標ダッシュボードでトレードを記録して貯める」用途は消える可能性があります。
+  → 記録を永続化したい場合は、無料のクラウドDB（例: Supabase）への保存に切り替える改修が別途必要です（希望があれば対応します）。
+- **APIレート/スリープ**：無料枠はしばらくアクセスが無いとスリープし、次回起動に数十秒かかります。
+- **秘密情報**：`secrets.toml` と `.env`、`portfolio.csv` は `.gitignore` 済み。GitHubには絶対に上げないでください。
+
+---
+
+## ローカル開発はそのまま
+`APP_PASSWORD` を設定しなければパスワードゲートは無効（no-op）なので、これまでどおり：
+```bash
+streamlit run app.py
+```
+で動きます。

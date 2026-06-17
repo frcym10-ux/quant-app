@@ -10,10 +10,11 @@ import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
-from modules import data_fetcher, indicators, risk_manager, screener
+from modules import auth, data_fetcher, indicators, risk_manager, screener
 from modules import strategy_alpha, strategy_beta
 
 st.set_page_config(page_title="戦略シグナル", page_icon="🎯", layout="wide")
+auth.require_auth()
 st.title("🎯 戦略シグナル履歴")
 
 # ========== 入力 ==========

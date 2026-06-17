@@ -9,9 +9,10 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from modules import data_fetcher, holdings_monitor, indicators, screener
+from modules import auth, data_fetcher, holdings_monitor, indicators, screener
 
 st.set_page_config(page_title="ポートフォリオ概況", page_icon="💼", layout="wide")
+auth.require_auth()
 st.title("💼 ポートフォリオ概況")
 
 # ========== 保有銘柄の売り時・買い増しサイン ==========

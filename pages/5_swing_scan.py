@@ -10,9 +10,10 @@ import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
-from modules import explain, swing_scanner, universe
+from modules import auth, explain, swing_scanner, universe
 
 st.set_page_config(page_title="スイング候補スキャン", page_icon="🛰️", layout="wide")
+auth.require_auth()
 st.title("🛰️ スイング候補 自動スキャン")
 st.markdown(
     "テーマ別ユニバース（AI・半導体／量子／宇宙・防衛／生活インフラ）を一括分析し、"
