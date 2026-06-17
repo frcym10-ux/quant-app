@@ -72,6 +72,16 @@ with col_b:
     if st.button("ポートフォリオへ →", use_container_width=True):
         st.switch_page("pages/4_portfolio.py")
 
+col_c, _col_d = st.columns(2)
+with col_c:
+    st.markdown("### 🧪 戦略バックテスト")
+    st.markdown(
+        "戦略α/βを過去データで検証。勝率・期待値（R）・プロフィットファクター・"
+        "最大ドローダウンを銘柄別に算出し、戦略に優位性があるかを裏付けます。"
+    )
+    if st.button("バックテストへ →", use_container_width=True):
+        st.switch_page("pages/7_backtest.py")
+
 st.markdown("---")
 st.markdown("### 実装戦略")
 
