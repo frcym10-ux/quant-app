@@ -12,9 +12,10 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from modules import backtest
+from modules import auth, backtest
 
 st.set_page_config(page_title="戦略バックテスト", page_icon="🧪", layout="wide")
+auth.require_auth()
 st.title("🧪 戦略バックテスト")
 st.markdown(
     "戦略α/βを過去データで検証します。**期待値R（1回あたりの平均リスク倍率）がプラスで、"

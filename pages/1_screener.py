@@ -9,9 +9,10 @@ import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
-from modules import screener
+from modules import auth, screener
 
 st.set_page_config(page_title="銘柄スクリーニング", page_icon="🔍", layout="wide")
+auth.require_auth()
 st.title("🔍 銘柄スクリーニング")
 
 # ========== サイドバー: 条件入力 ==========
