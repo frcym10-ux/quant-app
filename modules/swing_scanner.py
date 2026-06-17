@@ -22,7 +22,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
-from modules import indicators, risk_manager, strategy_alpha, strategy_beta, universe
+from modules import indicators, market_filter, risk_manager, strategy_alpha, strategy_beta, universe
 
 SCAN_PERIOD = "6mo"
 MIN_ROWS = 60                       # 指標計算に必要な最低営業日数
@@ -240,10 +240,31 @@ def _resolve_targets(theme_filter: list[str] | None) -> dict[str, str]:
     return universe.all_codes()
 
 
+def _apply_market_filter(r: dict, market_status: dict | None) -> dict:
+    """全体相場が逆風（200日線割れ）なら新規ロング候補を格下げ・減点する
+
+    ロング偏重の運用では、指数が下落基調のときにエントリーを控えるだけで
+    成績の安定性が大きく改善する。逆風時は候補→監視に格下げし、スコアも下げる。
+    """
+    info = (market_status or {}).get(r["市場"]) or {}
+    light = info.get("light", "")
+    r["相場"] = light or "—"
+    if light == "🔴":
+        r["スコア"] = round(max(float(r["スコア"]) - 12, 0), 0)
+        if r["種別"] == "候補":
+            r["種別"] = "監視"
+        r["根拠"] += (
+            " ／ ⚠️ 全体相場が逆風（指数が200日線割れ）。"
+            "無理な新規ロングは見送り、入るならごく小さく"
+        )
+    return r
+
+
 def scan(
     theme_filter: list[str] | None = None,
     top_n: int = 20,
     data: dict[str, pd.DataFrame] | None = None,
+    market_status: dict | None = None,
 ) -> pd.DataFrame:
     """全ユニバースをスキャンしてスコア順の候補DataFrameを返す
 
@@ -251,10 +272,16 @@ def scan(
         theme_filter: 対象テーマ名のリスト（Noneなら全テーマ）
         top_n: 返す最大件数
         data: 事前取得済みの {コード: 日足DataFrame}（指定時は再取得しない）
+        market_status: market_filter.market_status() の結果。Noneなら内部で取得を試みる
     """
     targets = _resolve_targets(theme_filter)
     if data is None:
         data = batch_fetch(list(targets.keys()))
+    if market_status is None:
+        try:
+            market_status = market_filter.market_status()
+        except Exception:
+            market_status = {}
 
     rows = []
     for code, df in data.items():
@@ -263,7 +290,7 @@ def scan(
         try:
             r = _evaluate(code, targets[code], df)
             if r:
-                rows.append(r)
+                rows.append(_apply_market_filter(r, market_status))
         except Exception:
             continue
     if not rows:

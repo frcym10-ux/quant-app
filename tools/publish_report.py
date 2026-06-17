@@ -21,7 +21,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from modules import holdings_monitor, notifier, swing_scanner, universe  # noqa: E402
+from modules import holdings_monitor, market_filter, notifier, swing_scanner, universe  # noqa: E402
 
 PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "..", "swing-report")
 
@@ -58,6 +58,17 @@ h2 { font-size: 1.05rem; margin: 20px 0 8px; border-left: 4px solid #4a9eff; pad
 .invest { font-size: .78rem; color: #9ab; margin-top: 6px; line-height: 1.5; }
 .theme { font-size: .72rem; color: #777; }
 .empty { color: #888; padding: 12px; }
+
+/* ===== 市場フィルター（相場の信号） ===== */
+.market { display: flex; gap: 8px; margin-bottom: 12px; }
+.mkt-card { flex: 1; background: #1a1f2b; border: 1px solid #2a3142; border-radius: 10px;
+            padding: 9px 11px; }
+.mkt-card .mname { font-size: .75rem; color: #9ab; }
+.mkt-card .mlight { font-size: .95rem; font-weight: 700; margin: 2px 0; }
+.mkt-card .mcomment { font-size: .72rem; color: #aab; line-height: 1.5; }
+.mkt-card.off { border-color: #7a2a2a; }
+.mkt-card.warn { border-color: #7a6a2a; }
+.mkt-card.on { border-color: #1f6b3f; }
 footer { color: #666; font-size: .72rem; margin-top: 24px; line-height: 1.6; }
 
 /* ===== タブ ===== */
@@ -224,7 +235,29 @@ def _signal_panel(ov) -> str:
     return "".join(parts)
 
 
-def render(df, ov) -> str:
+def _market_banner(ms) -> str:
+    """全体相場（日経225・S&P500）の信号バナーを描画する"""
+    if not ms:
+        return ""
+    cls_map = {"🟢": "on", "🟡": "warn", "🔴": "off"}
+    cards = []
+    for market in ("日本", "米国"):
+        info = ms.get(market)
+        if not info:
+            continue
+        cls = cls_map.get(info["light"], "")
+        cards.append(
+            f"<div class='mkt-card {cls}'>"
+            f"<div class='mname'>{_esc(info.get('name', market))}</div>"
+            f"<div class='mlight'>{info['light']} {_esc(info['trend'])}</div>"
+            f"<div class='mcomment'>{_esc(info['comment'])}</div></div>"
+        )
+    if not cards:
+        return ""
+    return "<div class='market'>" + "".join(cards) + "</div>"
+
+
+def render(df, ov, ms=None) -> str:
     """スキャン結果と概況をモバイル向けタブHTMLにレンダリングする"""
     jst = dt.timezone(dt.timedelta(hours=9))
     now = dt.datetime.now(jst).strftime("%Y-%m-%d %H:%M")
@@ -236,6 +269,7 @@ def render(df, ov) -> str:
         f"<style>{CSS}</style></head><body>",
         "<h1>📈 クオンツ投資ダイジェスト</h1>",
         f"<p class='ts'>更新: {now}（日足ベース・平日朝夕更新）</p>",
+        _market_banner(ms),
         "<div class='tabs'>",
         "<div class='tab active' data-tab='scan'>🛰️ 候補</div>",
         "<div class='tab' data-tab='tech'>📊 一覧</div>",
@@ -269,13 +303,18 @@ def render(df, ov) -> str:
 def main() -> None:
     # API取得は1回だけ行い、各タブで使い回す（二重ダウンロード回避）
     data = swing_scanner.batch_fetch(list(universe.all_codes().keys()))
-    df = swing_scanner.scan(top_n=30, data=data)
+    try:
+        ms = market_filter.market_status()
+    except Exception as e:
+        print(f"市場フィルター取得失敗（レポートは継続）: {e}")
+        ms = {}
+    df = swing_scanner.scan(top_n=30, data=data, market_status=ms)
     ov = swing_scanner.overview(data=data)
 
     os.makedirs(PUBLIC_DIR, exist_ok=True)
     out = os.path.join(PUBLIC_DIR, "index.html")
     with open(out, "w", encoding="utf-8") as f:
-        f.write(render(df, ov))
+        f.write(render(df, ov, ms))
     print(f"レポート生成: {out}（候補 {len(df)}件 / 一覧 {len(ov)}銘柄）")
 
     # 保有銘柄サインのチェックと自分宛メール通知（公開レポートには含めない）
