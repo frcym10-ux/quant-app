@@ -18,12 +18,11 @@ import os
 import re
 import sys
 
-import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
-from modules import indicators, risk_manager, universe
+from modules import indicators, risk_manager, strategy_alpha, strategy_beta, universe
 
 SCAN_PERIOD = "6mo"
 MIN_ROWS = 60                       # 指標計算に必要な最低営業日数
@@ -222,23 +221,45 @@ def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
     }
 
 
-def scan(theme_filter: list[str] | None = None, top_n: int = 20) -> pd.DataFrame:
+def _regime(adx: float) -> str:
+    """ADX値からレジーム（レンジ/中立/トレンド）を判定する"""
+    if adx < settings.ADX_RANGE_THRESHOLD:
+        return "レンジ"
+    if adx >= settings.ADX_TREND_THRESHOLD:
+        return "トレンド"
+    return "中立"
+
+
+def _resolve_targets(theme_filter: list[str] | None) -> dict[str, str]:
+    """テーマ指定から対象 {コード: 銘柄名} を返す（Noneなら全テーマ）"""
+    if theme_filter:
+        targets: dict[str, str] = {}
+        for t in theme_filter:
+            targets.update(universe.THEMES.get(t, {}))
+        return targets
+    return universe.all_codes()
+
+
+def scan(
+    theme_filter: list[str] | None = None,
+    top_n: int = 20,
+    data: dict[str, pd.DataFrame] | None = None,
+) -> pd.DataFrame:
     """全ユニバースをスキャンしてスコア順の候補DataFrameを返す
 
     Args:
         theme_filter: 対象テーマ名のリスト（Noneなら全テーマ）
         top_n: 返す最大件数
+        data: 事前取得済みの {コード: 日足DataFrame}（指定時は再取得しない）
     """
-    if theme_filter:
-        targets: dict[str, str] = {}
-        for t in theme_filter:
-            targets.update(universe.THEMES.get(t, {}))
-    else:
-        targets = universe.all_codes()
+    targets = _resolve_targets(theme_filter)
+    if data is None:
+        data = batch_fetch(list(targets.keys()))
 
-    data = batch_fetch(list(targets.keys()))
     rows = []
     for code, df in data.items():
+        if code not in targets:
+            continue
         try:
             r = _evaluate(code, targets[code], df)
             if r:
@@ -252,4 +273,74 @@ def scan(theme_filter: list[str] | None = None, top_n: int = 20) -> pd.DataFrame
         .sort_values("スコア", ascending=False)
         .head(top_n)
         .reset_index(drop=True)
+    )
+
+
+def _overview_row(code: str, name: str, df: pd.DataFrame) -> dict | None:
+    """1銘柄のテクニカル概況（指標＋レジーム＋戦略シグナル）をdictで返す"""
+    df = indicators.calc_all(df)
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+    close = float(latest["close"])
+    rsi = float(latest["rsi"])
+    adx = float(latest["adx"])
+    is_jp = _is_jp(code)
+
+    sig_a = int(strategy_alpha.signal(df).iloc[-1])
+    sig_b = int(strategy_beta.signal(df).iloc[-1])
+    sigs: list[str] = []
+    if sig_a == 1:
+        sigs.append("α買")
+    elif sig_a == -1:
+        sigs.append("α売")
+    if sig_b == 1:
+        sigs.append("β買")
+
+    return {
+        "コード": code,
+        "銘柄名": name,
+        "市場": "日本" if is_jp else "米国",
+        "テーマ": " / ".join(universe.themes_of(code)),
+        "終値": round(close, 2),
+        "前日比%": round((close / float(prev["close"]) - 1) * 100, 2),
+        "RSI": round(rsi, 0),
+        "ADX": round(adx, 0),
+        "レジーム": _regime(adx),
+        "VWAP位置": "上" if close > float(latest["vwap"]) else "下",
+        "シグナル": " / ".join(sigs) or "-",
+    }
+
+
+def overview(
+    theme_filter: list[str] | None = None,
+    data: dict[str, pd.DataFrame] | None = None,
+) -> pd.DataFrame:
+    """ユニバース全銘柄のテクニカル概況テーブルを返す（スクリーナー相当）
+
+    候補かどうかに関わらず全銘柄を返す。コードは市場→コード順にソート。
+
+    Args:
+        theme_filter: 対象テーマ名のリスト（Noneなら全テーマ）
+        data: 事前取得済みの {コード: 日足DataFrame}（指定時は再取得しない）
+    """
+    targets = _resolve_targets(theme_filter)
+    if data is None:
+        data = batch_fetch(list(targets.keys()))
+
+    rows = []
+    for code, df in data.items():
+        if code not in targets:
+            continue
+        try:
+            r = _overview_row(code, targets[code], df)
+            if r:
+                rows.append(r)
+        except Exception:
+            continue
+    if not rows:
+        return pd.DataFrame()
+    out = pd.DataFrame(rows)
+    out["_jp"] = out["市場"].map({"日本": 0, "米国": 1})
+    return (
+        out.sort_values(["_jp", "コード"]).drop(columns="_jp").reset_index(drop=True)
     )
