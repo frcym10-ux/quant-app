@@ -23,3 +23,6 @@ python-dotenv>=1.0.0
 
 # その他ユーティリティ
 requests>=2.31.0
+
+# トレード記録のクラウド永続化（任意・SUPABASE_URL/SUPABASE_KEY設定時のみ使用）
+supabase>=2.0.0

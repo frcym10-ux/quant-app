@@ -2,7 +2,8 @@
 modules/journal.py
 スイングトレードの記録（トレードジャーナル）
 
-data/trades.csv に保存する。実現損益・勝率・期待値を集計し、目標管理（goal.py）に渡す。
+保存先は trade_store が自動判定（Supabase設定時はクラウド、なければ data/trades.csv）。
+実現損益・勝率・期待値を集計し、目標管理（goal.py）に渡す。
 損益は「Rマルチプル方式」で通貨に依存せず計算する:
     r = (決済値 - エントリー値) / (エントリー値 - 損切り値)   ← 価格単位の比なので円/ドル不問
     実現損益(円) = r × リスク額(円)
@@ -17,22 +18,15 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import settings
+from modules import trade_store
+from modules.trade_store import COLUMNS
 
-TRADES_CSV = os.path.join(os.path.dirname(__file__), "..", "data", "trades.csv")
-
-COLUMNS = [
-    "id", "date_open", "code", "name", "market", "setup",
-    "entry", "sl", "tp", "shares", "risk_yen",
-    "status", "date_close", "exit", "pnl_yen", "r_multiple", "note",
-]
+TRADES_CSV = trade_store.TRADES_CSV  # 後方互換（CSV保存先パス）
 
 
 def load_trades() -> pd.DataFrame:
-    """トレード履歴をDataFrameで返す（なければ空の枠を返す）"""
-    if not os.path.exists(TRADES_CSV):
-        return pd.DataFrame(columns=COLUMNS)
-    df = pd.read_csv(TRADES_CSV, dtype={"code": str, "id": str})
+    """トレード履歴をDataFrameで返す（保存先はSupabase/CSVを自動判定）"""
+    df = trade_store.read_all()
     for c in COLUMNS:
         if c not in df.columns:
             df[c] = None
@@ -40,8 +34,7 @@ def load_trades() -> pd.DataFrame:
 
 
 def _save(df: pd.DataFrame) -> None:
-    os.makedirs(os.path.dirname(TRADES_CSV), exist_ok=True)
-    df.to_csv(TRADES_CSV, index=False, encoding="utf-8-sig")
+    trade_store.write_all(df)
 
 
 def add_trade(code: str, name: str, market: str, setup: str,

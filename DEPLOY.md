@@ -63,13 +63,29 @@ HOLDINGS_JSON = '[{"code":"7011","name":"三菱重工業","avg_cost":1500}]'  # 
 ## 注意点・既知の制約
 
 - **トレード記録（ジャーナル）の永続化**：Community Cloudのファイルシステムは一時的で、再起動・再デプロイで
-  `data/trades.csv` が消えます。**読む系の機能（チャート・スクリーナー・バックテスト・スイングスキャン）は問題なし**ですが、
-  「目標ダッシュボードでトレードを記録して貯める」用途は消える可能性があります。
-  → 記録を永続化したい場合は、無料のクラウドDB（例: Supabase）への保存に切り替える改修が別途必要です（希望があれば対応します）。
+  `data/trades.csv` が消えます。下記のSupabase設定を行えば**クラウドに永続化され消えません**（未設定ならローカルCSVのまま）。
 - **APIレート/スリープ**：無料枠はしばらくアクセスが無いとスリープし、次回起動に数十秒かかります。
 - **秘密情報**：`secrets.toml` と `.env`、`portfolio.csv` は `.gitignore` 済み。GitHubには絶対に上げないでください。
 
 ---
+
+## トレード記録をクラウドに永続化（Supabase・無料）
+
+Supabaseプロジェクト **`quant-app`（東京リージョン）** と `quant_trades` テーブルは作成済みです。
+あとは **service_role キー**をsecretsに入れるだけで、ジャーナルがクラウド保存に切り替わります。
+
+1. https://supabase.com/dashboard/project/imbrldrsohzpppdmrmcv の **Project Settings → API** を開く
+2. **`service_role`** のキー（`eyJ...` の長い文字列）をコピー
+   - ⚠️ service_role はDB全権限を持つため、**Streamlitのsecrets（サーバー側）にのみ**置き、GitHubやブラウザには絶対に出さない
+3. Streamlitアプリの Secrets に追記：
+   ```toml
+   SUPABASE_URL = "https://imbrldrsohzpppdmrmcv.supabase.co"
+   SUPABASE_KEY = "（コピーしたservice_roleキー）"
+   ```
+4. 保存するとアプリが自動でSupabaseを使い始めます（目標ダッシュボード画面に「保存先: Supabase」と表示）。
+
+> `quant_trades` は RLS 有効・公開ポリシー無しで、service_role キーからのみ読み書きできます。
+> SUPABASE_URL/KEY を設定しなければ、これまでどおりローカルCSV（`data/trades.csv`）に保存します。
 
 ## ローカル開発はそのまま
 `APP_PASSWORD` を設定しなければパスワードゲートは無効（no-op）なので、これまでどおり：
