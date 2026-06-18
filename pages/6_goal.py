@@ -10,11 +10,12 @@ import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
-from modules import auth, goal, journal, swing_scanner
+from modules import auth, goal, journal, swing_scanner, trade_store
 
 st.set_page_config(page_title="目標ダッシュボード", page_icon="🎯", layout="wide")
 auth.require_auth()
 st.title("🎯 目標ダッシュボード")
+st.caption(f"📦 トレード記録の保存先: {trade_store.backend_name()}")
 
 s = goal.summary()
 
