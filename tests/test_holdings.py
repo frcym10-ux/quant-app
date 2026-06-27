@@ -47,6 +47,36 @@ def test_parse_broker_csv_english():
     print("test_parse_broker_csv_english OK")
 
 
+def test_parse_rakuten_multisection():
+    """楽天証券の実フォーマット（先頭に資産合計欄＋タブ区切り＋投資信託混在）を取り込めること"""
+    lines = [
+        "■資産合計欄",
+        "\t時価評価額[円]\t前日比[円]",
+        "資産合計\t14,294,498\t-123,723",
+        "",
+        "国内株式\t5,224,450\t-89,800",
+        "",
+        "■ 保有商品詳細 (すべて）",
+        "",
+        ("種別\t銘柄コード・ティッカー\t銘柄\t口座\t保有数量\t［単位］\t平均取得価額\t［単位］"
+         "\t現在値\t［単位］\t現在値(更新日)\t(参考為替)\t前日比\t［単位］\t時価評価額[円]"
+         "\t時価評価額[外貨]\t評価損益[円]\t評価損益[％]"),
+        "国内株式\t7011\t三菱重工業\t特定\t100\t株\t2,100\t円\t2,500\t円\t2026/6/24\t-\t+50\t円\t250,000\t\t+40,000\t+19.04",
+        "米国株式\tVOO\tバンガードS&P500\t特定\t10\t株\t520\tドル\t600\tドル\t2026/6/23\t155.00\t+5\tドル\t930,000\t6,000\t+124,000\t+15.38",
+        "投資信託\tJP90C000H1T1\t楽天・全世界株式\t特定\t100000\t口\t12,000\t円\t13,000\t円\t2026/6/24\t-\t+10\t円\t1,300,000\t\t+100,000\t+8.33",
+    ]
+    data = "\n".join(lines).encode("cp932")
+    df = holdings_store.parse_broker_csv(data)
+    assert set(df["code"]) == {"7011", "VOO"}, df["code"].tolist()  # 投資信託は除外
+    r = df[df["code"] == "7011"].iloc[0]
+    assert r["name"] == "三菱重工業"
+    assert r["shares"] == 100.0
+    assert r["avg_cost"] == 2100.0
+    voo = df[df["code"] == "VOO"].iloc[0]
+    assert voo["avg_cost"] == 520.0
+    print("test_parse_rakuten_multisection OK")
+
+
 def _synthetic_df(trend: str) -> pd.DataFrame:
     """250本の合成日足を作る（trend: 'up' / 'down' / 'flat'）"""
     n = 250
@@ -107,6 +137,7 @@ if __name__ == "__main__":
     test_to_number()
     test_parse_broker_csv_japanese_cp932()
     test_parse_broker_csv_english()
+    test_parse_rakuten_multisection()
     test_analyze_holding_swing_has_levels()
     test_analyze_holding_downtrend_is_stoploss()
     test_analyze_holding_gachi_no_levels()
