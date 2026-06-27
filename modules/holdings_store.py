@@ -10,8 +10,10 @@ modules/holdings_store.py
 """
 from __future__ import annotations
 
+import csv
 import io
 import os
+import re
 import sys
 
 import pandas as pd
@@ -27,14 +29,19 @@ DEFAULT_HOLD_TYPE = "スイング"
 
 _NUMERIC = {"shares", "avg_cost"}
 
-# 証券会社CSVの見出し→標準列名のゆらぎ吸収（小文字・空白除去で照合）
+# 証券会社CSVの見出し→標準列名のゆらぎ吸収（完全一致・大文字小文字無視で照合）
+# 楽天証券「保有商品詳細」は「銘柄コード・ティッカー」「銘柄」等の独特な見出し。
 _HEADER_SYNONYMS = {
-    "code": ["銘柄コード", "コード", "証券コード", "ティッカー", "code", "ticker", "symbol", "銘柄"],
-    "name": ["銘柄名", "名称", "name", "銘柄名称"],
+    "code": ["銘柄コード・ティッカー", "銘柄コード", "コード", "証券コード", "ティッカー",
+             "code", "ticker", "symbol"],
+    "name": ["銘柄", "銘柄名", "名称", "name", "銘柄名称"],
     "shares": ["保有数量", "数量", "株数", "保有株数", "保有口数", "shares", "quantity", "qty", "口数"],
     "avg_cost": ["平均取得価額", "取得単価", "平均取得単価", "取得価額", "平均取得",
                  "取得平均", "avg_cost", "cost", "average_cost", "買付単価"],
 }
+
+# 取得対象とみなす銘柄コード（日本株4桁＋任意英字 / 米国ティッカー）。投資信託・現金等は除外。
+_CODE_RE = re.compile(r"\d{3,4}[0-9A-Z]?|[A-Z]{1,5}")
 
 _client = None
 
@@ -101,37 +108,74 @@ def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
 
 # ========== CSV取込 ==========
 
+def _map_header(cells: list[str]) -> dict[str, int]:
+    """ヘッダー行のセル一覧から、標準列名→列インデックスの対応を返す（完全一致）"""
+    norm = [str(c).strip().strip('"').strip() for c in cells]
+    norm_l = [c.lower() for c in norm]
+    mapping: dict[str, int] = {}
+    for std, syns in _HEADER_SYNONYMS.items():
+        syns_l = [s.lower() for s in syns]
+        for idx, (cell, cell_l) in enumerate(zip(norm, norm_l)):
+            if cell in syns or cell_l in syns_l:
+                mapping[std] = idx
+                break
+    return mapping
+
+
 def parse_broker_csv(data: bytes) -> pd.DataFrame:
     """証券会社のCSV（bytes）を読み、標準列のDataFrameに変換する
 
-    文字コードは utf-8-sig → cp932 → utf-8 の順に試す。
-    見出しのゆらぎを吸収して code/name/shares/avg_cost を抽出する。
+    楽天証券のように先頭に「資産合計欄」などの別セクションがあっても、
+    保有明細のヘッダー行（保有数量・平均取得価額・銘柄コードを含む行）を自動検出して
+    そこから読み取る。区切りはタブ/カンマを自動判定し、引用符内のカンマも正しく扱う。
+    投資信託・現金など取得対象外のコードは除外する。
     """
-    raw = None
+    text = None
     for enc in ("utf-8-sig", "cp932", "utf-8"):
         try:
-            raw = pd.read_csv(io.BytesIO(data), encoding=enc, dtype=str)
+            text = data.decode(enc)
             break
-        except (UnicodeDecodeError, pd.errors.ParserError):
+        except UnicodeDecodeError:
             continue
-    if raw is None or raw.empty:
+    if text is None:
         return pd.DataFrame(columns=HOLD_COLUMNS)
 
-    # 見出しの正規化（空白除去）してマッピング
-    norm_cols = {str(c).strip(): c for c in raw.columns}
-    mapping: dict[str, str] = {}
-    for std, syns in _HEADER_SYNONYMS.items():
-        for header, original in norm_cols.items():
-            if header in syns or header.lower() in [s.lower() for s in syns]:
-                mapping[std] = original
-                break
+    delimiter = "\t" if "\t" in text else ","
+    reader = list(csv.reader(io.StringIO(text), delimiter=delimiter))
 
-    out = pd.DataFrame()
-    for std in ("code", "name", "shares", "avg_cost"):
-        out[std] = raw[mapping[std]] if std in mapping else None
-    out["hold_type"] = DEFAULT_HOLD_TYPE
-    out["note"] = ""
-    return _normalize_df(out)
+    # 明細ヘッダー行を探す（code/shares/avg_cost が揃う行）
+    header_idx = None
+    mapping: dict[str, int] = {}
+    for i, cells in enumerate(reader):
+        m = _map_header(cells)
+        if {"code", "shares", "avg_cost"} <= set(m):
+            header_idx, mapping = i, m
+            break
+    if header_idx is None:
+        return pd.DataFrame(columns=HOLD_COLUMNS)
+
+    max_idx = max(mapping.values())
+    rows = []
+    for cells in reader[header_idx + 1:]:
+        if not any(str(c).strip() for c in cells):
+            continue  # 空行・区切り行
+        if len(cells) <= max_idx:
+            continue  # 列数が足りない行（小計行など）
+        rows.append({
+            "code": cells[mapping["code"]].strip(),
+            "name": cells[mapping["name"]].strip() if "name" in mapping else "",
+            "shares": cells[mapping["shares"]],
+            "avg_cost": cells[mapping["avg_cost"]],
+            "hold_type": DEFAULT_HOLD_TYPE,
+            "note": "",
+        })
+    if not rows:
+        return pd.DataFrame(columns=HOLD_COLUMNS)
+
+    df = _normalize_df(pd.DataFrame(rows))
+    # 取得可能なコード（日本株/米国ティッカー）だけ残す＝投資信託・現金行を除外
+    df = df[df["code"].map(lambda c: bool(_CODE_RE.fullmatch(str(c))))].reset_index(drop=True)
+    return df
 
 
 # ========== CSVバックエンド ==========
