@@ -87,6 +87,28 @@ Supabaseプロジェクト **`quant-app`（東京リージョン）** と `quant
 > `quant_trades` は RLS 有効・公開ポリシー無しで、service_role キーからのみ読み書きできます。
 > SUPABASE_URL/KEY を設定しなければ、これまでどおりローカルCSV（`data/trades.csv`）に保存します。
 
+### 保有銘柄テーブル（quant_holdings）
+
+保有銘柄（ポートフォリオ）もSupabaseに永続化できます。`quant_holdings` テーブルが必要です。
+**まだ作成されていない場合**は、Supabaseダッシュボード → **SQL Editor** に以下を貼って一度だけ実行してください
+（テーブルが無い間は自動でローカルCSV `data/portfolio.csv` に保存されます）：
+
+```sql
+create table if not exists public.quant_holdings (
+  code text primary key,
+  name text,
+  shares numeric,
+  avg_cost numeric,
+  hold_type text not null default 'スイング',
+  note text,
+  updated_at timestamptz not null default now()
+);
+alter table public.quant_holdings enable row level security;
+```
+
+作成後、`SUPABASE_URL` / `SUPABASE_KEY` が設定されていれば、ポートフォリオ画面の取り込み・編集が
+クラウドに保存されます（区分「スイング／ガチホ」もここに記録）。
+
 ## ローカル開発はそのまま
 `APP_PASSWORD` を設定しなければパスワードゲートは無効（no-op）なので、これまでどおり：
 ```bash
