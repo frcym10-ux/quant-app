@@ -109,6 +109,25 @@ alter table public.quant_holdings enable row level security;
 作成後、`SUPABASE_URL` / `SUPABASE_KEY` が設定されていれば、ポートフォリオ画面の取り込み・編集が
 クラウドに保存されます（区分「スイング／ガチホ」もここに記録）。
 
+## 完全自動運用（あなたは楽天で注文するだけ）
+
+朝夕の自動実行（GitHub Actions）が、**アプリで取り込んだ保有銘柄**を毎回チェックし、
+アクションがある日だけ「本日のアクション」メールを送ります：
+
+- 🔔 保有銘柄：🔺利確検討（**推奨指値**つき）／🔻損切り検討（**撤退ライン**つき）
+- 🛰️ 新規候補：買い目安・株数・SL/TP
+
+これを有効にするには、**GitHubリポジトリ側にもSupabaseのシークレットを登録**します（1回だけ）：
+
+1. GitHubで `frcym10-ux/quant-app` を開く → **Settings → Secrets and variables → Actions**
+2. **New repository secret** で以下の2つを追加：
+   - Name: `SUPABASE_URL` ／ Secret: `https://imbrldrsohzpppdmrmcv.supabase.co`
+   - Name: `SUPABASE_KEY` ／ Secret: （Supabaseの service_role キー。Streamlitに入れたものと同じ）
+3. 以降は、アプリのポートフォリオ画面でCSVを取り込むだけで、翌朝から自動監視の対象に反映されます。
+
+> Supabase未設定の間は、従来どおり `HOLDINGS_JSON` シークレット（設定済みなら）にフォールバックします。
+> メール通知には `SMTP_USER` / `SMTP_PASS` / `NOTIFY_TO` の設定が必要です（設定済み）。
+
 ## ローカル開発はそのまま
 `APP_PASSWORD` を設定しなければパスワードゲートは無効（no-op）なので、これまでどおり：
 ```bash

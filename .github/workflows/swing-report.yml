@@ -33,9 +33,12 @@ jobs:
       - name: スキャン実行・レポート生成・メール通知
         run: python tools/publish_report.py
         env:
-          # 保有銘柄サイン用（portfolio.csvはリポジトリに含めないためシークレットで渡す）
+          # 保有銘柄の読み取り: Supabase（アプリで取込した保有が自動反映）。
+          # 未設定なら HOLDINGS_JSON にフォールバックする。
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           HOLDINGS_JSON: ${{ secrets.HOLDINGS_JSON }}
-          # 候補が出た日の自分宛メール通知用（未設定なら通知はスキップ）
+          # アクションがある日の自分宛メール通知用（未設定なら通知はスキップ）
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           NOTIFY_TO: ${{ secrets.NOTIFY_TO }}

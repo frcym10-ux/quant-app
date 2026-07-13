@@ -317,9 +317,9 @@ def main() -> None:
         f.write(render(df, ov, ms))
     print(f"レポート生成: {out}（候補 {len(df)}件 / 一覧 {len(ov)}銘柄）")
 
-    # 保有銘柄サインのチェックと自分宛メール通知（公開レポートには含めない）
+    # 保有銘柄の売買アクション判定と自分宛メール通知（公開レポートには含めない）
     try:
-        holdings = holdings_monitor.scan_holdings()
+        holdings = holdings_monitor.analyze()
         notifier.send_if_needed(df, holdings)
     except Exception as e:
         print(f"通知処理でエラー（レポート生成は成功）: {e}")
