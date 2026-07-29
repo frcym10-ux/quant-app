@@ -119,29 +119,25 @@ def explain_candidate(row: dict) -> dict:
     stop = f"{sl:,.2f}{cur}（今より約 {loss_pct:.1f}%）まで下がったら撤退（損切り）"
     take = f"{tp:,.2f}{cur}（今より約 +{gain_pct:.1f}%）まで上がったら利確を検討"
 
-    # --- 投資金額・想定リスク・期待値 ---
+    # --- 投資金額・想定リスク ---
+    # 修正1・修正3: リスク上限は絶対額（settings.MAX_RISK_YEN）で管理する。
+    # 「期待値の目安」は全銘柄でほぼ同じ値になり判断材料にならないため表示しない
+    # （トレード記録が settings.ASSUMED_WIN_RATE 見直しに足る件数たまるまでは実測値も出せない）。
     shares = row.get("株数目安")
-    risk_yen = row.get("リスク額") or (settings.SWING_CAPITAL * settings.SWING_RISK_PERCENT)
+    risk_yen = row.get("リスク額") or settings.MAX_RISK_YEN
     invest_yen = row.get("投資額")
     cur_note = "" if is_jp else "（米国株・円換算）"
     if shares and invest_yen:
         invest = (
             f"目安 {int(shares):,}株 ＝ 約 {invest_yen:,.0f}円{cur_note}。"
-            f"もし撤退ラインに当たっても損失は約 {risk_yen:,.0f}円（元手の{settings.SWING_RISK_PERCENT:.0%}）に収まるよう株数を調整しています。"
+            f"もし撤退ラインに当たっても損失は約 {risk_yen:,.0f}円（上限 {settings.MAX_RISK_YEN:,.0f}円）に収まるよう株数を調整しています。"
         )
     else:
         invest = (
-            f"1回の損失を元手の{settings.SWING_RISK_PERCENT:.0%}（約 {risk_yen:,.0f}円）に抑える株数で。"
+            f"この銘柄は現在の資金・リスク設定（1回の損失上限 {settings.MAX_RISK_YEN:,.0f}円、"
+            f"1銘柄あたりの上限 {settings.MAX_POSITION_YEN:,.0f}円、"
+            f"利用可能資金 {settings.AVAILABLE_CASH:,.0f}円）では購入できません。"
         )
-
-    # 期待値（想定勝率ベースの目安）: 期待R = 勝率×損益比 -(1-勝率)
-    w, b = settings.ASSUMED_WIN_RATE, settings.REWARD_RISK
-    exp_r = w * b - (1 - w)
-    exp_yen = exp_r * risk_yen
-    edge = (
-        f"📊 期待値の目安：1回 約 {exp_yen:+,.0f}円"
-        f"（勝率{w:.0%}・利益:損失={b:g}:1 と仮定。利確で約+{risk_yen*b:,.0f}円／損切りで約-{risk_yen:,.0f}円）"
-    )
 
     # --- なぜ候補か（指標のやさしい要約） ---
     why = setup_desc + " " + rsi_comment(float(row["RSI"])) + " ／ " + adx_comment(float(row["ADX"]))
@@ -149,13 +145,19 @@ def explain_candidate(row: dict) -> dict:
     # --- 買う前チェックリスト ---
     checklist = [
         f"撤退ライン（{sl:,.2f}{cur}）を必ず決めてから買う",
-        "直近に決算発表が控えていないか（決算前後は値動きが荒れやすい）",
         f"この銘柄に最近の悪いニュースが出ていないか（{row['コード']} {row['銘柄名']}）",
         "日経平均やS&P500など全体相場が急落していないか",
         "1つの銘柄やテーマに資金を集中させすぎていないか",
     ]
     if atr_pct >= 4.0:
         checklist.insert(1, "値動きが激しい銘柄です。株数を控えめにすることも検討")
+
+    # --- 発注前の手動確認（修正6） ---
+    # 決算発表予定日を無料で自動取得する手段がないため、手動確認を促す形にしている。
+    preflight = [
+        "決算発表日が今後14営業日以内にないか？（企業のIRページで確認）",
+        "保有期間中に日銀会合・FOMCを跨がないか？",
+    ]
 
     one_liner = f"{risk_emoji} {setup_type}｜{cur=='円' and '日本株' or '米国株'}"
 
@@ -167,7 +169,7 @@ def explain_candidate(row: dict) -> dict:
         "take": take,
         "risk": f"{risk_emoji} 値動き：{risk_lbl}（1日あたり平均 約{atr_pct:.1f}%動く）",
         "invest": invest,
-        "edge": edge,
         "checklist": checklist,
+        "preflight": preflight,
         "one_liner": one_liner,
     }

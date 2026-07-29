@@ -92,6 +92,37 @@ def batch_fetch(codes: list[str], period: str = SCAN_PERIOD) -> dict[str, pd.Dat
     return result
 
 
+def _buy_filter_reason(latest: pd.Series, turnover_yen: float) -> str | None:
+    """買いシグナルの絶対除外条件を判定する（修正2）
+
+    暴落途中の銘柄が「押し目」として誤検出されるのを防ぐハードフィルター。
+    「候補」「監視」「α買」「β買」すべての買いシグナルに適用する。
+    理由文字列（除外あり）または None（除外なし）を返す。
+    """
+    close = float(latest["close"])
+
+    sma75 = latest.get("sma75")
+    if sma75 is not None and pd.notna(sma75) and close < float(sma75):
+        return "75日線割れのため候補外"
+
+    rsi = float(latest["rsi"])
+    if rsi > settings.BUY_FILTER_RSI_MAX:
+        return "過熱のため候補外"
+    if rsi < settings.BUY_FILTER_RSI_MIN:
+        return "下落継続中のため候補外"
+
+    sma25 = latest.get("sma25")
+    if sma25 is not None and pd.notna(sma25) and float(sma25) > 0:
+        dev_pct = (close / float(sma25) - 1) * 100
+        if dev_pct > settings.BUY_FILTER_MA_DEV_MAX_PCT:
+            return "上に伸びすぎのため候補外"
+
+    if turnover_yen < settings.BUY_FILTER_MIN_TURNOVER_YEN:
+        return "流動性不足のため候補外"
+
+    return None
+
+
 def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
     """1銘柄を評価して候補dictを返す（候補でなければNone）"""
     df = indicators.calc_all(df)
@@ -99,8 +130,10 @@ def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
     prev = df.iloc[-2]
     close = float(latest["close"])
     is_jp = _is_jp(code)
+    fx = 1.0 if is_jp else get_usdjpy()
+    change_pct = (close / float(prev["close"]) - 1) * 100
 
-    # --- 流動性フィルター ---
+    # --- 流動性フィルター（基本の掲載条件。買いシグナル用のより厳しい流動性条件は後段） ---
     turnover = float((df["close"] * df["volume"]).tail(20).mean())
     if turnover < (MIN_TURNOVER_JP if is_jp else MIN_TURNOVER_US):
         return None
@@ -156,9 +189,10 @@ def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
                 reasons.append("RSI強気ダイバージェンス")
 
     # --- 3. ブレイクアウト（モメンタム） ---
+    # 修正4: レジーム判定と矛盾しないよう、ADX>=25（トレンド相場）のときのみ許可する
     if setup is None and close > float(latest["bb_upper"]) and vol_ratio >= 1.5:
         adx_rising = adx > float(prev["adx"])
-        if adx_rising:
+        if adx >= settings.ADX_TREND_THRESHOLD and adx_rising:
             setup = "ブレイクアウト"
             score = 50 + min((vol_ratio - 1.5) * 10, 15)
             reasons.append(f"BB上限ブレイク＋出来高 {vol_ratio:.1f}倍")
@@ -168,9 +202,7 @@ def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
                 reasons.append("MACD陽転済み")
 
     # --- 監視リスト（あと一歩でセットアップ完成の銘柄） ---
-    grade = "候補"
     if setup is None:
-        grade = "監視"
         # トレンド継続中でEMA12への押しを待つ
         if adx >= settings.ADX_TREND_THRESHOLD and plus_di > minus_di and close > float(latest["ema_long"]):
             gap = (close - float(latest["ema_short"])) / close * 100
@@ -179,7 +211,8 @@ def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
                 score = 45 - (gap - 3.0) * 2
                 reasons.append(f"上昇トレンド継続（ADX {adx:.0f}）、EMA12まであと{gap:.1f}%の押しを待つ")
         # レンジ下限への接近を待つ
-        elif adx < settings.ADX_RANGE_THRESHOLD + 3 and rsi <= 42:
+        # 修正4: 中立帯（20<=ADX<25）はレジームが定まらないためシグナルを出さない
+        elif adx < settings.ADX_RANGE_THRESHOLD and rsi <= 42:
             gap_kc = (close - float(latest["kc_lower"])) / close * 100
             if 0 < gap_kc <= 3.0:
                 setup = "平均回帰（待ち）"
@@ -189,34 +222,63 @@ def _evaluate(code: str, name: str, df: pd.DataFrame) -> dict | None:
     if setup is None:
         return None
 
-    # --- リスク管理（SL/TP・株数・リスク額・投資額） ---
-    sl, tp = risk_manager.calc_sl_tp(close, float(latest["atr"]), direction)
-    fx = 1.0 if is_jp else get_usdjpy()
-    risk_budget_yen = settings.SWING_CAPITAL * settings.SWING_RISK_PERCENT
-    per_share_risk = close - sl  # 1株あたりの値幅（通貨建て）
-    shares = int(risk_budget_yen / fx / per_share_risk) if per_share_risk > 0 else 0
-    risk_yen = round(shares * per_share_risk * fx, 0)        # 実際の円リスク額
-    invest_yen = round(shares * close * fx, 0)               # 円換算の投資額
-
-    change_pct = (close / float(prev["close"]) - 1) * 100
-    return {
+    base_row = {
         "コード": code,
         "銘柄名": name,
         "市場": "日本" if is_jp else "米国",
         "テーマ": " / ".join(universe.themes_of(code)),
-        "種別": grade,
         "セットアップ": setup,
-        "スコア": round(min(score, 95), 0),
         "終値": round(close, 2),
         "前日比%": round(change_pct, 2),
         "RSI": round(rsi, 0),
         "ADX": round(adx, 0),
         "ATR%": round(atr_pct, 1),
+    }
+
+    # --- 買いシグナルの絶対除外条件（修正2） ---
+    # 「候補」「監視（待ち含む）」はすべて買い方向のアイデアのため、このハードフィルターを適用する。
+    turnover_yen = turnover * fx
+    filter_reason = _buy_filter_reason(latest, turnover_yen)
+    if filter_reason:
+        return {
+            **base_row,
+            "種別": "除外",
+            "スコア": 0.0,
+            "SL": None, "TP": None, "株数目安": None, "リスク額": None, "投資額": None,
+            "根拠": " ／ ".join(reasons) + f" ／ ⛔ {filter_reason}",
+        }
+
+    # --- リスク管理（SL/TP・株数・リスク額・投資額）（修正1・修正5） ---
+    sl, tp = risk_manager.calc_sl_tp(close, float(latest["atr"]), direction)
+    per_share_risk = close - sl  # 1株あたりの値幅（通貨建て）
+
+    if per_share_risk <= 0:
+        shares = 0
+    else:
+        shares_by_risk = settings.MAX_RISK_YEN / fx / per_share_risk
+        shares_by_position = settings.MAX_POSITION_YEN / fx / close
+        shares_by_cash = settings.AVAILABLE_CASH / fx / close
+        shares = int(min(shares_by_risk, shares_by_position, shares_by_cash))
+
+    risk_yen = round(shares * per_share_risk * fx, 0) if shares > 0 else 0
+    invest_yen = round(shares * close * fx, 0) if shares > 0 else 0
+
+    grade = "候補" if setup in (
+        "トレンド押し目", "平均回帰リバウンド", "ブレイクアウト",
+    ) else "監視"
+
+    if shares <= 0:
+        reasons.append("⛔ 現在の資金・リスク設定では購入できません（株数0）")
+
+    return {
+        **base_row,
+        "種別": grade,
+        "スコア": round(min(score, 95), 0),
         "SL": round(sl, 2),
         "TP": round(tp, 2),
-        "株数目安": int(shares) if shares else None,
-        "リスク額": risk_yen,
-        "投資額": invest_yen,
+        "株数目安": int(shares) if shares > 0 else None,
+        "リスク額": risk_yen if shares > 0 else None,
+        "投資額": invest_yen if shares > 0 else None,
         "根拠": " ／ ".join(reasons),
     }
 
@@ -312,16 +374,30 @@ def _overview_row(code: str, name: str, df: pd.DataFrame) -> dict | None:
     rsi = float(latest["rsi"])
     adx = float(latest["adx"])
     is_jp = _is_jp(code)
+    fx = 1.0 if is_jp else get_usdjpy()
+    turnover_yen = float((df["close"] * df["volume"]).tail(20).mean()) * fx
 
     sig_a = int(strategy_alpha.signal(df).iloc[-1])
     sig_b = int(strategy_beta.signal(df).iloc[-1])
     sigs: list[str] = []
+    excluded: list[str] = []
+
+    # 修正2: 買いシグナル（α買・β買）にも候補・監視と同じハードフィルターを適用する
     if sig_a == 1:
-        sigs.append("α買")
+        reason = _buy_filter_reason(latest, turnover_yen)
+        if reason:
+            excluded.append(f"α買→{reason}")
+        else:
+            sigs.append("α買")
     elif sig_a == -1:
-        sigs.append("α売")
+        sigs.append("α売")  # 売りシグナルは除外条件の対象外
+
     if sig_b == 1:
-        sigs.append("β買")
+        reason = _buy_filter_reason(latest, turnover_yen)
+        if reason:
+            excluded.append(f"β買→{reason}")
+        else:
+            sigs.append("β買")
 
     return {
         "コード": code,
@@ -335,6 +411,7 @@ def _overview_row(code: str, name: str, df: pd.DataFrame) -> dict | None:
         "レジーム": _regime(adx),
         "VWAP位置": "上" if close > float(latest["vwap"]) else "下",
         "シグナル": " / ".join(sigs) or "-",
+        "除外シグナル": " / ".join(excluded) or "-",
     }
 
 

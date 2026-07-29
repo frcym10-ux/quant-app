@@ -77,7 +77,6 @@ else:
             a3.info(f"**利確の目安**\n\n{e['take']}")
 
             st.caption(f"💰 {e['invest']}")
-            st.caption(e["edge"])
             bcol1, bcol2 = st.columns([1, 4])
             if bcol1.button("📝 記録に回す", key=f"rec_{r['コード']}_{r['市場']}"):
                 st.session_state["journal_prefill"] = r.to_dict()
@@ -85,6 +84,9 @@ else:
             with bcol2.expander("✅ 買う前のチェックリスト"):
                 for item in e["checklist"]:
                     st.markdown(f"- {item}")
+                st.markdown("**⚠️ 発注前の手動確認**")
+                for item in e["preflight"]:
+                    st.markdown(f"- [ ] {item}")
 
 # ========== 監視リスト ==========
 st.markdown(f"### 👀 監視リスト（{len(watch)}件）")
@@ -96,6 +98,15 @@ else:
                "終値", "前日比%", "RSI", "ADX", "根拠"]],
         use_container_width=True, hide_index=True,
     )
+
+excluded = df[df["種別"] == "除外"]
+if not excluded.empty:
+    with st.expander(f"⛔ ハードフィルターで除外された銘柄（{len(excluded)}件）"):
+        st.caption("トレンド崩れ・過熱・流動性不足など、買いシグナルの絶対除外条件に該当したため候補・監視から外しています。")
+        st.dataframe(
+            excluded[["コード", "銘柄名", "市場", "終値", "前日比%", "RSI", "ADX", "根拠"]],
+            use_container_width=True, hide_index=True,
+        )
 
 with st.expander("ℹ️ 3つの買い場タイプとは？（やさしい説明）"):
     st.markdown(

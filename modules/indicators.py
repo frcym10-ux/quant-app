@@ -98,6 +98,10 @@ def calc_all(df: pd.DataFrame) -> pd.DataFrame:
     df["ema_short"] = _ema(close, settings.EMA_SHORT)
     df["ema_long"] = _ema(close, settings.EMA_LONG)
 
+    # SMA（買いシグナルのハードフィルター用：75日トレンド判定・25日乖離判定）
+    df["sma75"] = close.rolling(settings.BUY_FILTER_MA_PERIOD).mean()
+    df["sma25"] = close.rolling(settings.BUY_FILTER_MA_DEV_PERIOD).mean()
+
     # MACD
     macd = _ema(close, settings.MACD_FAST) - _ema(close, settings.MACD_SLOW)
     df["macd"] = macd

@@ -25,7 +25,7 @@ def _parse(d: str) -> dt.date:
 
 def expectancy_per_trade_yen(st: dict) -> tuple[float, str]:
     """1トレードあたりの期待値（円）と、その根拠（実績/仮定）を返す"""
-    risk_yen = settings.SWING_CAPITAL * settings.SWING_RISK_PERCENT
+    risk_yen = settings.MAX_RISK_YEN
     if st["n_closed"] >= MIN_TRADES_FOR_ACTUAL and st["expectancy_yen"] is not None:
         return st["expectancy_yen"], f"実績（{st['n_closed']}トレード）"
     # 仮定: 期待R = 勝率×損益比 -(1-勝率)

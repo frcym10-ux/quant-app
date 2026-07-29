@@ -20,7 +20,7 @@ st.caption(f"📦 トレード記録の保存先: {trade_store.backend_name()}")
 s = goal.summary()
 
 # ========== 進捗バー ==========
-st.subheader(f"年内 +{settings.GOAL_PROFIT/10000:.0f}万円（元手 {settings.SWING_CAPITAL/10000:.0f}万円・1回リスク {settings.SWING_RISK_PERCENT:.0%}）")
+st.subheader(f"年内 +{settings.GOAL_PROFIT/10000:.0f}万円（元手 {settings.SWING_CAPITAL/10000:.0f}万円・1回リスク上限 {settings.MAX_RISK_YEN:,.0f}円）")
 st.progress(min(max(s["progress"], 0), 1.0))
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("実現損益", f"{s['realized']:+,.0f}円", f"{s['progress']*100:.1f}% 達成")

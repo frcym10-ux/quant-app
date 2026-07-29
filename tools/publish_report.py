@@ -119,6 +119,7 @@ def _candidate_card(r, watch=False) -> str:
     cls = "card watch" if watch else "card"
     chg = float(r["前日比%"])
     chg_cls = "up" if chg >= 0 else "down"
+    preflight_html = "".join(f"<div>[ ] {_esc(item)}</div>" for item in e["preflight"])
     return (
         f"<div class='{cls}'>"
         f"<div class='head'><span class='name'>{_esc(r['コード'])} {_esc(r['銘柄名'])}</span>"
@@ -135,7 +136,21 @@ def _candidate_card(r, watch=False) -> str:
         f"<div class='act take'><span class='lbl'>利確の目安</span>{_esc(e['take'])}</div>"
         f"</div>"
         f"<div class='invest'>💰 {_esc(e['invest'])}</div>"
-        f"<div class='invest'>{_esc(e['edge'])}</div></div>"
+        f"<div class='invest'>⚠️ 発注前の手動確認：{preflight_html}</div></div>"
+    )
+
+
+def _excluded_card(r) -> str:
+    """ハードフィルターで除外された銘柄1件をカードHTMLにする"""
+    chg = float(r["前日比%"])
+    chg_cls = "up" if chg >= 0 else "down"
+    return (
+        "<div class='card watch'>"
+        f"<div class='head'><span class='name'>{_esc(r['コード'])} {_esc(r['銘柄名'])}</span>"
+        f"<span class='mkt'>{_esc(r['市場'])}</span></div>"
+        f"<div class='nums'>終値 <b>{r['終値']:,}</b> "
+        f"<span class='{chg_cls}'>{chg:+.2f}%</span> ／ RSI {r['RSI']:.0f} ／ ADX {r['ADX']:.0f}</div>"
+        f"<div class='why'>⛔ {_esc(r['根拠'])}</div></div>"
     )
 
 
@@ -150,6 +165,7 @@ def _scan_panel(df) -> str:
         return "".join(parts)
     cands = df[df["種別"] == "候補"]
     watch = df[df["種別"] == "監視"]
+    excluded = df[df["種別"] == "除外"]
     parts.append(f"<h2>🎯 エントリー候補（{len(cands)}件）</h2>")
     if cands.empty:
         parts.append("<p class='empty'>セットアップ完成銘柄なし。監視リストを確認。</p>")
@@ -158,6 +174,13 @@ def _scan_panel(df) -> str:
     if watch.empty:
         parts.append("<p class='empty'>監視銘柄なし。</p>")
     parts.extend(_candidate_card(r, watch=True) for _, r in watch.iterrows())
+    if not excluded.empty:
+        parts.append(f"<h2>⛔ 除外された銘柄（{len(excluded)}件）</h2>")
+        parts.append(
+            "<div class='hint'>トレンド崩れ・過熱・流動性不足など、買いシグナルの絶対除外条件に"
+            "該当したため候補・監視から外しています。</div>"
+        )
+        parts.extend(_excluded_card(r) for _, r in excluded.iterrows())
     return "".join(parts)
 
 
@@ -179,6 +202,8 @@ def _overview_row_html(r) -> str:
     chg = float(r["前日比%"])
     chg_cls = "up" if chg >= 0 else "down"
     sig = "" if r["シグナル"] == "-" else f"<span class='pill sig'>{_esc(r['シグナル'])}</span>"
+    excl = r.get("除外シグナル", "-")
+    excl_pill = "" if excl in ("-", None) else f"<span class='pill'>⛔ {_esc(excl)}</span>"
     return (
         "<div class='row'>"
         f"<div><span class='rcode'>{_esc(r['コード'])}</span>"
@@ -190,7 +215,7 @@ def _overview_row_html(r) -> str:
         f"<span class='pill'>ADX {r['ADX']:.0f}</span>"
         f"{_rsi_pill(float(r['RSI']))}"
         f"<span class='pill'>VWAP{_esc(r['VWAP位置'])}</span>"
-        f"{sig}"
+        f"{sig}{excl_pill}"
         "</div></div>"
     )
 
@@ -222,11 +247,17 @@ def _signal_panel(ov) -> str:
     if ov.empty:
         parts.append("<p class='empty'>データを取得できませんでした。</p>")
         return "".join(parts)
-    hits = ov[ov["シグナル"] != "-"]
+    has_excluded_col = "除外シグナル" in ov.columns
+    excl_mask = (ov["除外シグナル"] != "-") if has_excluded_col else False
+    hits = ov[(ov["シグナル"] != "-") | excl_mask]
     if hits.empty:
         parts.append("<p class='empty'>現在、戦略シグナルが点灯している銘柄はありません。</p>")
         return "".join(parts)
     parts.append(f"<h2>🎯 点灯中シグナル（{len(hits)}件）</h2>")
+    parts.append(
+        "<div class='hint'>⛔ が付いている銘柄は、シグナル自体は点灯しましたが"
+        "トレンド崩れなどのハードフィルターで買い候補から除外しています。</div>"
+    )
     parts.extend(_overview_row_html(r) for _, r in hits.iterrows())
     parts.append(
         "<div class='hint'>具体的なエントリー価格・損切り・利確・株数は、上の「スイング候補」タブ"

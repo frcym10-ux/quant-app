@@ -17,8 +17,27 @@ ACCOUNT_CAPITAL = float(os.getenv("ACCOUNT_CAPITAL", 1_000_000))  # 保有資産
 RISK_PERCENT = float(os.getenv("RISK_PERCENT", 0.01))              # 保有資産側の1トレードリスク率
 
 # ========== スイングトレード設定 ==========
-SWING_CAPITAL = float(os.getenv("SWING_CAPITAL", 3_000_000))       # スイング元手（円）
-SWING_RISK_PERCENT = float(os.getenv("SWING_RISK_PERCENT", 0.02))  # スイング1トレードのリスク率（2%）
+SWING_CAPITAL = float(os.getenv("SWING_CAPITAL", 3_000_000))       # スイング元手（円・目標管理用）
+
+# ========== スイングトレード リスク管理（1トレードあたり・絶対額） ==========
+# リスク上限 26,000円 の根拠：
+# 依頼者の平均勝ち 52,461円 の半分に設定することで、
+# リスクリワード 1:2 が成立する。
+# 旧設定(60,000円 = SWING_CAPITAL × 2%)では平均勝ちを上回っており、
+# 構造的に「負けの方が大きい」状態だった。
+MAX_RISK_YEN = float(os.getenv("MAX_RISK_YEN", 26000))              # 1トレードの最大許容損失（円）
+MAX_POSITION_YEN = float(os.getenv("MAX_POSITION_YEN", 700_000))    # 1銘柄への最大投資額（円）
+AVAILABLE_CASH = float(os.getenv("AVAILABLE_CASH", 1_650_000))      # 利用可能資金（円・手入力で更新可能）
+
+# ========== 買いシグナルの絶対除外条件 ==========
+# 暴落途中の銘柄が「押し目」として誤検出されるのを防ぐハードフィルター。
+# 「候補」「監視」「α買」「β買」すべての買いシグナルに適用する。
+BUY_FILTER_MA_PERIOD = 75             # 終値がこの移動平均を割り込んだら買い候補から除外
+BUY_FILTER_RSI_MAX = 75               # RSIがこれを超えたら過熱として除外
+BUY_FILTER_RSI_MIN = 40               # RSIがこれを下回ったら下落継続中として除外
+BUY_FILTER_MA_DEV_PERIOD = 25         # 上方乖離率の基準にする移動平均の期間
+BUY_FILTER_MA_DEV_MAX_PCT = 12.0      # この移動平均からの上方乖離%上限
+BUY_FILTER_MIN_TURNOVER_YEN = 3_000_000_000  # 20日平均売買代金の下限（円換算）
 
 # ========== 目標設定 ==========
 GOAL_PROFIT = float(os.getenv("GOAL_PROFIT", 1_000_000))           # 目標利益（円）
