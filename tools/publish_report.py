@@ -56,6 +56,10 @@ h2 { font-size: 1.05rem; margin: 20px 0 8px; border-left: 4px solid #4a9eff; pad
 .act.take { background: #1a2740; border: 1px solid #2a4a7a; }
 .act.take .lbl { color: #7fb4ff; }
 .invest { font-size: .78rem; color: #9ab; margin-top: 6px; line-height: 1.5; }
+.precheck { font-size: .78rem; color: #d9c97f; margin-top: 8px; padding: 8px 10px;
+            background: #2a2418; border: 1px solid #4a3f20; border-radius: 8px; line-height: 1.6; }
+.precheck b { color: #f0d878; display: block; margin-bottom: 3px; }
+.precheck .chk { color: #cdd6e0; }
 .theme { font-size: .72rem; color: #777; }
 .empty { color: #888; padding: 12px; }
 
@@ -97,6 +101,7 @@ footer { color: #666; font-size: .72rem; margin-top: 24px; line-height: 1.6; }
 .pill.os { background: #14301f; color: #4cd791; }
 .pill.ob { background: #341818; color: #ff7676; }
 .pill.sig { background: #3a2440; color: #e6a8ff; font-weight: 700; }
+.pill.out { background: #341818; color: #ff9a9a; }
 """
 
 REPORT_URL_NOTE = (
@@ -135,7 +140,9 @@ def _candidate_card(r, watch=False) -> str:
         f"<div class='act take'><span class='lbl'>利確の目安</span>{_esc(e['take'])}</div>"
         f"</div>"
         f"<div class='invest'>💰 {_esc(e['invest'])}</div>"
-        f"<div class='invest'>{_esc(e['edge'])}</div></div>"
+        f"<div class='precheck'><b>⚠️ 発注前の手動確認</b>"
+        + "".join(f"<div class='chk'>☐ {_esc(x)}</div>" for x in e["pre_order"])
+        + "</div></div>"
     )
 
 
@@ -179,6 +186,8 @@ def _overview_row_html(r) -> str:
     chg = float(r["前日比%"])
     chg_cls = "up" if chg >= 0 else "down"
     sig = "" if r["シグナル"] == "-" else f"<span class='pill sig'>{_esc(r['シグナル'])}</span>"
+    reason = r.get("候補外理由", "") if hasattr(r, "get") else ""
+    reason_pill = f"<span class='pill out'>{_esc(reason)}</span>" if reason else ""
     return (
         "<div class='row'>"
         f"<div><span class='rcode'>{_esc(r['コード'])}</span>"
@@ -190,7 +199,7 @@ def _overview_row_html(r) -> str:
         f"<span class='pill'>ADX {r['ADX']:.0f}</span>"
         f"{_rsi_pill(float(r['RSI']))}"
         f"<span class='pill'>VWAP{_esc(r['VWAP位置'])}</span>"
-        f"{sig}"
+        f"{sig}{reason_pill}"
         "</div></div>"
     )
 

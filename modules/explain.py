@@ -93,7 +93,7 @@ def explain_candidate(row: dict) -> dict:
     Args:
         row: swing_scanner.scan() が返す1行（dict化したもの）
     Returns:
-        headline, why, buy, stop, take, risk, invest, checklist, one_liner を持つdict
+        headline, why, buy, stop, take, risk, invest, checklist, pre_order, one_liner を持つdict
     """
     is_jp = row["市場"] == "日本"
     cur = "円" if is_jp else "ドル"
@@ -119,29 +119,25 @@ def explain_candidate(row: dict) -> dict:
     stop = f"{sl:,.2f}{cur}（今より約 {loss_pct:.1f}%）まで下がったら撤退（損切り）"
     take = f"{tp:,.2f}{cur}（今より約 +{gain_pct:.1f}%）まで上がったら利確を検討"
 
-    # --- 投資金額・想定リスク・期待値 ---
+    # --- 投資金額・想定リスク（修正1・修正5） ---
+    # 損失上限は絶対額 MAX_RISK_YEN（デフォルト26,000円）で管理する。
     shares = row.get("株数目安")
-    risk_yen = row.get("リスク額") or (settings.SWING_CAPITAL * settings.SWING_RISK_PERCENT)
+    risk_yen = row.get("リスク額") or settings.MAX_RISK_YEN
     invest_yen = row.get("投資額")
     cur_note = "" if is_jp else "（米国株・円換算）"
     if shares and invest_yen:
         invest = (
             f"目安 {int(shares):,}株 ＝ 約 {invest_yen:,.0f}円{cur_note}。"
-            f"もし撤退ラインに当たっても損失は約 {risk_yen:,.0f}円（元手の{settings.SWING_RISK_PERCENT:.0%}）に収まるよう株数を調整しています。"
+            f"もし撤退ラインに当たっても損失は約 {risk_yen:,.0f}円"
+            f"（上限 {settings.MAX_RISK_YEN:,.0f}円以内）に収まるよう株数を調整しています。"
         )
     else:
+        # 3つの資金・リスク制約のいずれかで株数が0になったケース（修正5）
         invest = (
-            f"1回の損失を元手の{settings.SWING_RISK_PERCENT:.0%}（約 {risk_yen:,.0f}円）に抑える株数で。"
+            "この銘柄は現在の資金・リスク設定では購入できません"
+            f"（1株の値幅が大きく、損失上限 {settings.MAX_RISK_YEN:,.0f}円・"
+            f"投資額上限 {settings.MAX_POSITION_YEN:,.0f}円の枠に収まりません）。"
         )
-
-    # 期待値（想定勝率ベースの目安）: 期待R = 勝率×損益比 -(1-勝率)
-    w, b = settings.ASSUMED_WIN_RATE, settings.REWARD_RISK
-    exp_r = w * b - (1 - w)
-    exp_yen = exp_r * risk_yen
-    edge = (
-        f"📊 期待値の目安：1回 約 {exp_yen:+,.0f}円"
-        f"（勝率{w:.0%}・利益:損失={b:g}:1 と仮定。利確で約+{risk_yen*b:,.0f}円／損切りで約-{risk_yen:,.0f}円）"
-    )
 
     # --- なぜ候補か（指標のやさしい要約） ---
     why = setup_desc + " " + rsi_comment(float(row["RSI"])) + " ／ " + adx_comment(float(row["ADX"]))
@@ -157,6 +153,12 @@ def explain_candidate(row: dict) -> dict:
     if atr_pct >= 4.0:
         checklist.insert(1, "値動きが激しい銘柄です。株数を控えめにすることも検討")
 
+    # --- 発注前の手動確認（修正6：自動取得できないため手動チェックを促す） ---
+    pre_order = [
+        "決算発表日が今後14営業日以内にないか？（企業のIRページで確認）",
+        "保有期間中に日銀会合・FOMCを跨がないか？",
+    ]
+
     one_liner = f"{risk_emoji} {setup_type}｜{cur=='円' and '日本株' or '米国株'}"
 
     return {
@@ -167,7 +169,7 @@ def explain_candidate(row: dict) -> dict:
         "take": take,
         "risk": f"{risk_emoji} 値動き：{risk_lbl}（1日あたり平均 約{atr_pct:.1f}%動く）",
         "invest": invest,
-        "edge": edge,
         "checklist": checklist,
+        "pre_order": pre_order,
         "one_liner": one_liner,
     }

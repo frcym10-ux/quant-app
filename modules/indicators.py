@@ -98,6 +98,11 @@ def calc_all(df: pd.DataFrame) -> pd.DataFrame:
     df["ema_short"] = _ema(close, settings.EMA_SHORT)
     df["ema_long"] = _ema(close, settings.EMA_LONG)
 
+    # SMA（中期トレンド判定・乖離率用。買いシグナルのハードフィルターで使用）
+    df["sma_mid"] = close.rolling(settings.SMA_MID_PERIOD).mean()      # 25日線
+    df["sma_trend"] = close.rolling(settings.SMA_TREND_PERIOD).mean()  # 75日線
+    df["disparity_mid"] = (close / df["sma_mid"] - 1) * 100            # 25日線からの乖離%
+
     # MACD
     macd = _ema(close, settings.MACD_FAST) - _ema(close, settings.MACD_SLOW)
     df["macd"] = macd
