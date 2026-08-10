@@ -88,6 +88,18 @@ VWAP_RESET = "daily"
 EMA_SHORT = 12
 EMA_LONG = 26
 
+# ========== 米セクター→日本ETF リードラグ判定（modules/sector_leadlag.py） ==========
+# 前日の米国セクターの動きが翌営業日の東京の同セクターETFに波及するアノマリーを使い、
+# 値がさ個別株の代替としてセクターETFを機械的にスクリーニングする（指示書ステップ4）。
+# しきい値は全て仮値。バックテスト（tools/backtest_leadlag.py）で
+# 期待値R>0かつPF>1.3・コスト控除後を確認してから本採用すること（指示書ステップ5）。
+LEADLAG_US_RETURN_THRESHOLD = 0.015   # 米国セクター指標の前日リターンがこれ以上で「候補」
+LEADLAG_GAP_THRESHOLD = 0.03          # 日本ETFの寄りギャップがこれ以上なら押し目待ちに切替（寄り成り禁止）
+LEADLAG_SL_ATR_MULT = 2.0             # 損切り = エントリー - 2×ATR
+LEADLAG_TP_ATR_MULT = 4.0             # 利確 = エントリー + 4×ATR（R:R 1:2）
+LEADLAG_MAX_HOLD_DAYS = 10            # 最大保有営業日数（タイムストップ）
+LEADLAG_ROUNDTRIP_COST_PCT = 0.002    # 往復コスト概算（手数料+スリッページ）。バックテストはこれを控除後で評価する
+
 # ========== スクリーニング設定 ==========
 # デフォルトの銘柄ユニバース（ユーザー保有銘柄）
 MY_STOCKS_JP = [
