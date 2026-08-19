@@ -5,6 +5,8 @@ tests/test_step6.py
 
 実行: python tests/test_step6.py  または  pytest tests/test_step6.py
 """
+import datetime as dt
+import importlib.util
 import os
 import sys
 
@@ -12,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from modules import chart_filter, order_calc, screener  # noqa: E402
+from modules import chart_filter, earnings, order_calc, screener  # noqa: E402
 
 
 def _df(closes, volumes=None, highs=None):
@@ -227,6 +229,39 @@ def test_screen_all_presets_runs_and_marks_dup():
     print("test_screen_all_presets_runs_and_marks_dup OK", list(out["プリセット"]))
 
 
+# ========== 決算日フィルタ（6-6）＆ 今週の候補レンダリング（6-4） ==========
+
+def test_earnings_flag():
+    ref = dt.date(2026, 8, 19)
+    tbl = {"6702": dt.date(2026, 8, 24), "9432": dt.date(2026, 10, 1)}
+    near, _ = earnings.earnings_flag("6702", ref=ref, table=tbl)
+    far, _ = earnings.earnings_flag("9432", ref=ref, table=tbl)
+    none, d = earnings.earnings_flag("1234", ref=ref, table=tbl)
+    assert near.startswith("⚠️決算接近") and not far.startswith("⚠️")
+    assert "未登録" in none and d is None
+    print("test_earnings_flag OK")
+
+
+def test_weekly_panel_render():
+    spec = importlib.util.spec_from_file_location(
+        "pubrep", os.path.join(os.path.dirname(__file__), "..", "tools", "publish_report.py"))
+    pr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pr)
+    wk = pd.DataFrame([{
+        "コード": "2914", "銘柄名": "JT", "プリセット": "⑥週足中期", "重複": "★重複",
+        "現在値": 4000, "指標メモ": "52週高値から-8.0%", "チャート合格": "✅",
+        "指値": 3880, "損切り": 3730, "利確": 4180, "RR": 2.0, "建玉額": 388000,
+        "かぶミニ": "", "要確認": "-", "ROE%": 12, "配当利回り%": 3, "PER": 15,
+    }])
+    tbl = {"2914": dt.date(2026, 8, 24)}
+    html = pr._weekly_panel(wk, tbl)
+    for s in ["今週の候補", "⑥週足中期", "★重複", "推奨指値", "JT"]:
+        assert s in html, s
+    # weekly=None のときは今週タブを出さない
+    assert "data-tab='weekly'" not in pr.render(pd.DataFrame(), pd.DataFrame())
+    print("test_weekly_panel_render OK")
+
+
 if __name__ == "__main__":
     test_chart_reject_downtrend()
     test_chart_accept_healthy()
@@ -244,4 +279,6 @@ if __name__ == "__main__":
     test_preset4_bollinger()
     test_preset5_golden_cross()
     test_screen_all_presets_runs_and_marks_dup()
+    test_earnings_flag()
+    test_weekly_panel_render()
     print("\nALL step6 tests passed ✅")
