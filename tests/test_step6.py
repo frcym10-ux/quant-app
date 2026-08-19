@@ -152,6 +152,81 @@ def test_screen_preset6_end_to_end():
     print("test_screen_preset6_end_to_end OK")
 
 
+# ========== 他プリセット①〜⑤の固有条件 ==========
+
+def _passed(checks):
+    """_finalize と同じ判定（False が無ければ合格）"""
+    return all(v is not False for v in checks.values())
+
+
+def test_preset1_pushback():
+    df = pd.DataFrame({"close": [1000, 1000], "rsi": [38, 38],
+                       "sma25": [1030, 1030], "sma75": [980, 980],
+                       "high": [1000, 1000], "volume": [1, 1]})
+    checks, memo, rh = screener._preset1(df, {})
+    assert _passed(checks) and rh is None, checks
+    # 乖離が浅すぎる（-0.5%）と不合格
+    df2 = df.assign(sma25=[1005, 1005])
+    assert screener._preset1(df2, {})[0]["25日乖離 -5〜-1%"] is False
+    print("test_preset1_pushback OK", memo)
+
+
+def test_preset2_breakout():
+    df = pd.DataFrame({"close": [990, 1000], "volume": [100, 200], "rsi": [60, 60],
+                       "sma25": [985, 985], "high": [995, 1000]})
+    checks, memo, rh = screener._preset2(df, {})
+    assert _passed(checks), checks
+    assert checks["売買代金 前日比≥1.5倍"] is True and rh == 1000.0
+    print("test_preset2_breakout OK", memo)
+
+
+def test_preset3_ordinary_growth_flagged():
+    df = pd.DataFrame({"close": [1000, 1000], "rsi": [38, 38]})
+    checks, memo, rh = screener._preset3(
+        df, {"roe": 12.0, "ordinary_income_growth": None, "per": 15.0})
+    # 経常利益変化率が未取得（None）でも不合格にはせず要確認
+    assert checks["経常利益変化率≥+5%"] is None
+    assert _passed(checks) is True
+    print("test_preset3_ordinary_growth_flagged OK")
+
+
+def test_preset4_bollinger():
+    df = pd.DataFrame({"close": [940, 940], "rsi": [30, 30],
+                       "bb_lower": [950, 950], "bb_mid": [1000, 1000],
+                       "sma75": [900, 900]})
+    checks, memo, rh = screener._preset4(df, {})
+    assert _passed(checks) and checks["BB -2σ〜-3σ到達"] is True
+    # -3σより下（過剰）なら到達=False
+    df2 = df.assign(close=[900, 900])
+    assert screener._preset4(df2, {})[0]["BB -2σ〜-3σ到達"] is False
+    print("test_preset4_bollinger OK")
+
+
+def test_preset5_golden_cross():
+    gc_df = pd.DataFrame({"close": [100.0] * 29 + [200.0]})
+    flat_df = pd.DataFrame({"close": [100.0] * 30})
+    fund = {"dividend_yield": 4.0, "roe": 10.0}
+    assert screener._preset5(gc_df, fund)[0]["GC(5日/25日)"] is True
+    assert screener._preset5(flat_df, fund)[0]["GC(5日/25日)"] is False
+    print("test_preset5_golden_cross OK")
+
+
+def test_screen_all_presets_runs_and_marks_dup():
+    price_data = {"9999": _preset6_price(), "8888": _downtrend()}
+    fmap = {
+        "9999": {"roe": 12.0, "dividend_yield": 3.0, "per": 15.0,
+                 "ordinary_income_growth": 8.0, "name": "優良テスト"},
+        "8888": {"roe": 12.0, "dividend_yield": 3.0, "per": 15.0,
+                 "ordinary_income_growth": 8.0, "name": "下降株"},
+    }
+    out = screener.screen_all_presets(["9999", "8888"], available_cash=1_650_000,
+                                      price_data=price_data, fundamentals_map=fmap)
+    assert "重複" in out.columns
+    assert (out["プリセット"] == "⑥週足中期").any()          # ⑥で拾える
+    assert "8888" not in set(out["コード"])                  # 下降株はチャートで全除外
+    print("test_screen_all_presets_runs_and_marks_dup OK", list(out["プリセット"]))
+
+
 if __name__ == "__main__":
     test_chart_reject_downtrend()
     test_chart_accept_healthy()
@@ -163,4 +238,10 @@ if __name__ == "__main__":
     test_preset6_fail_on_per()
     test_preset6_missing_fundamentals_flagged_not_failed()
     test_screen_preset6_end_to_end()
+    test_preset1_pushback()
+    test_preset2_breakout()
+    test_preset3_ordinary_growth_flagged()
+    test_preset4_bollinger()
+    test_preset5_golden_cross()
+    test_screen_all_presets_runs_and_marks_dup()
     print("\nALL step6 tests passed ✅")
