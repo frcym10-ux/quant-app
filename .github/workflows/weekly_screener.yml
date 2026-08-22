@@ -1,0 +1,47 @@
+# 週次スクリーナー（指示書ステップ6-5）
+# 日曜朝に6プリセットでスクリーニング→チャート数値判定→注文計算し、
+# 「今週の候補」タブ付きレポートを生成してVercelへ公開する。
+# オーナーは日曜夜にスマホで見て、iSPEEDで手動発注する運用。
+# 注: GitHub Actionsのスケジュールは混雑時に30〜90分ほど遅延する（ベストエフォート）。
+name: weekly-screener
+
+on:
+  schedule:
+    # JST = UTC+9。毎週 日曜 7:00 JST = 土曜 22:00 UTC
+    - cron: "0 22 * * 6"
+  workflow_dispatch: {}  # 手動実行も可能
+
+jobs:
+  screen-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERCEL_ORG_ID: team_vVRxxz1tdCVHPR8ZnUpYUR7O
+      VERCEL_PROJECT_ID: prj_W8JC3zES4kCbWyfNRAr1WpFNd3ni
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 依存パッケージのインストール
+        run: pip install -r requirements-ci.txt
+
+      - name: 週次スクリーニング・レポート生成（今週の候補タブ付き）
+        run: python tools/publish_report.py --weekly
+        env:
+          # 決算予定日の手動登録（任意）: {"6702":"2026-07-30", ...} を Secrets に入れると
+          # 「⚠️決算接近」判定に使われる。未設定なら各銘柄「決算日未登録（要手動確認）」表示。
+          EARNINGS_JSON: ${{ secrets.EARNINGS_JSON }}
+          # 保有銘柄・通知は swing-report と共通（未設定ならスキップ）
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          HOLDINGS_JSON: ${{ secrets.HOLDINGS_JSON }}
+          REPORT_URL: https://swing-report.vercel.app
+
+      - name: Vercelへデプロイ
+        run: npx vercel@latest deploy --prod --yes --cwd swing-report --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

@@ -21,7 +21,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from modules import holdings_monitor, market_filter, notifier, swing_scanner, universe  # noqa: E402
+from modules import earnings, holdings_monitor, market_filter, notifier, screener, swing_scanner, universe  # noqa: E402
 
 PUBLIC_DIR = os.path.join(os.path.dirname(__file__), "..", "swing-report")
 
@@ -97,6 +97,14 @@ footer { color: #666; font-size: .72rem; margin-top: 24px; line-height: 1.6; }
 .pill.os { background: #14301f; color: #4cd791; }
 .pill.ob { background: #341818; color: #ff7676; }
 .pill.sig { background: #3a2440; color: #e6a8ff; font-weight: 700; }
+
+/* ===== 今週の候補（週次スクリーナー） ===== */
+.badge-dup { font-size: .7rem; font-weight: 700; color: #ffd479; background: #3a3320;
+             border-radius: 999px; padding: 1px 7px; }
+.earn { font-size: .76rem; margin-top: 6px; padding: 6px 9px; border-radius: 8px;
+        background: #1a2740; border: 1px solid #2a4a7a; color: #bcd9ff; }
+.earn.warn { background: #341818; border-color: #7a2a2a; color: #ff9a9a; }
+.confirm { font-size: .72rem; color: #d9c97f; margin-top: 5px; }
 """
 
 REPORT_URL_NOTE = (
@@ -288,8 +296,60 @@ def _market_banner(ms) -> str:
     return "<div class='market'>" + "".join(cards) + "</div>"
 
 
-def render(df, ov, ms=None) -> str:
-    """スキャン結果と概況をモバイル向けタブHTMLにレンダリングする"""
+def _weekly_card(r, earnings_table) -> str:
+    """今週の候補1件（プリセット・注文水準・決算警告つき）をカードHTMLにする"""
+    code = str(r["コード"])
+    sector = " / ".join(universe.themes_of(code)) or "—"
+    dup = "<span class='badge-dup'>★重複</span>" if str(r.get("重複", "")) else ""
+    kabu = " ⚠️かぶミニ（成行のみ・逆指値不可）" if str(r.get("かぶミニ", "")) else ""
+
+    earn_text, earn_date = earnings.earnings_flag(code, table=earnings_table)
+    warn = "warn" if earn_text.startswith("⚠️") else ""
+    confirm = "" if str(r.get("要確認", "-")) in ("-", "") else (
+        f"<div class='confirm'>要確認: {_esc(r['要確認'])}</div>")
+
+    return (
+        f"<div class='card'>"
+        f"<div class='head'><span class='name'>{_esc(code)} {_esc(r['銘柄名'])}</span>"
+        f"<span class='mkt'>{_esc(sector)}</span>{dup}</div>"
+        f"<span class='setup'>{_esc(r['プリセット'])}</span>"
+        f"<div class='nums'>現在値 <b>{r['現在値']:,}</b> ／ {_esc(r.get('指標メモ',''))} "
+        f"／ チャート{_esc(str(r.get('チャート合格','')))}</div>"
+        f"<div class='actions'>"
+        f"<div class='act buy'><span class='lbl'>推奨指値</span>{r['指値']:,}</div>"
+        f"<div class='act stop'><span class='lbl'>損切り</span>{r['損切り']:,}</div>"
+        f"<div class='act take'><span class='lbl'>利確（RR {r['RR']}）</span>{r['利確']:,}</div>"
+        f"</div>"
+        f"<div class='invest'>💰 建玉 約 {r['建玉額']:,.0f}円{kabu}</div>"
+        f"<div class='earn {warn}'>📅 {_esc(earn_text)}</div>"
+        f"{confirm}</div>"
+    )
+
+
+def _weekly_panel(weekly, earnings_table) -> str:
+    """タブ: 今週の候補（週次スクリーナー・6プリセット）"""
+    parts = [
+        "<div class='hint'>楽天スーパースクリーナー相当の6プリセット（押し目/ブレイク/業績/"
+        "ボリンジャー逆張り/GC×高配当/週足中期）で自動抽出し、チャート3点チェック（数値判定）を"
+        "通過した銘柄です。指値・損切り・利確・建玉額まで自動計算しています。日曜朝に更新。</div>",
+    ]
+    if weekly is None or len(weekly) == 0:
+        parts.append("<p class='empty'>今週は条件を満たす候補がありません（または未生成）。</p>")
+        return "".join(parts)
+    parts.append(f"<h2>📋 今週の候補（{len(weekly)}件）</h2>")
+    parts.extend(_weekly_card(r, earnings_table) for _, r in weekly.iterrows())
+    parts.append(
+        "<div class='hint'>⚠️ 発注前に「決算接近」表示と、日銀会合・FOMCの跨ぎを必ず確認してください。"
+        "指値・株数は参考値です。注文はご自身でiSPEEDに入力してください。</div>"
+    )
+    return "".join(parts)
+
+
+def render(df, ov, ms=None, weekly=None, earnings_table=None) -> str:
+    """スキャン結果と概況をモバイル向けタブHTMLにレンダリングする
+
+    weekly（screener.screen_all_presets の結果）を渡すと「今週の候補」タブを追加する。
+    """
     jst = dt.timezone(dt.timedelta(hours=9))
     now = dt.datetime.now(jst).strftime("%Y-%m-%d %H:%M")
     parts = [
@@ -305,10 +365,13 @@ def render(df, ov, ms=None) -> str:
         "<div class='tab active' data-tab='scan'>🛰️ 候補</div>",
         "<div class='tab' data-tab='tech'>📊 一覧</div>",
         "<div class='tab' data-tab='signal'>🎯 シグナル</div>",
+        ("<div class='tab' data-tab='weekly'>📋 今週</div>" if weekly is not None else ""),
         "</div>",
         f"<div class='panel active' id='scan'>{_scan_panel(df)}</div>",
         f"<div class='panel' id='tech'>{_tech_panel(ov)}</div>",
         f"<div class='panel' id='signal'>{_signal_panel(ov)}</div>",
+        (f"<div class='panel' id='weekly'>{_weekly_panel(weekly, earnings_table)}</div>"
+         if weekly is not None else ""),
     ]
     parts.append(
         "<footer>「買う目安・撤退ライン・利確の目安」は、その銘柄の値動きの大きさから自動計算した参考値です。"
@@ -342,10 +405,24 @@ def main() -> None:
     df = swing_scanner.scan(top_n=30, data=data, market_status=ms)
     ov = swing_scanner.overview(data=data)
 
+    # 今週の候補（週次スクリーナー）は重い財務取得を伴うため、週次ジョブ（--weekly /
+    # INCLUDE_WEEKLY=1）のときだけ生成する。平日の朝夕レポートは従来どおり軽く回す。
+    weekly = None
+    earn_table = None
+    if "--weekly" in sys.argv or os.getenv("INCLUDE_WEEKLY") == "1":
+        try:
+            weekly = screener.screen_all_presets(
+                list(universe.all_codes().keys()), price_data=data)
+            earn_table = earnings.load_earnings()
+            print(f"週次スクリーナー: {len(weekly)}件")
+        except Exception as e:
+            print(f"週次スクリーナー失敗（レポートは継続）: {e}")
+            weekly = None
+
     os.makedirs(PUBLIC_DIR, exist_ok=True)
     out = os.path.join(PUBLIC_DIR, "index.html")
     with open(out, "w", encoding="utf-8") as f:
-        f.write(render(df, ov, ms))
+        f.write(render(df, ov, ms, weekly=weekly, earnings_table=earn_table))
     print(f"レポート生成: {out}（候補 {len(df)}件 / 一覧 {len(ov)}銘柄）")
 
     # 保有銘柄の売買アクション判定と自分宛メール通知（公開レポートには含めない）
