@@ -111,6 +111,7 @@ def backtest_preset(
 
     overall = backtest.summarize(all_trades)
     overall["strategy"] = screener.PRESET_NAMES[preset_id]
+    overall["by_year"] = backtest.summarize_by_year(all_trades)
     per_symbol = (
         pd.DataFrame(rows).sort_values("累計R", ascending=False).reset_index(drop=True)
         if rows else pd.DataFrame()

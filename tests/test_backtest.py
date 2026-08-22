@@ -47,6 +47,27 @@ def test_summarize_empty():
     print("test_summarize_empty OK")
 
 
+def test_summarize_by_year_groups_by_entry_year():
+    """エントリー年ごとに正しく分かれ、各年の集計が summarize と一致すること"""
+    trades = [
+        {"entry_date": pd.Timestamp("2024-03-01"), "r": 1.5, "hold": 3},
+        {"entry_date": pd.Timestamp("2024-11-01"), "r": -1.0, "hold": 2},
+        {"entry_date": pd.Timestamp("2025-01-15"), "r": 1.5, "hold": 4},
+    ]
+    by_year = backtest.summarize_by_year(trades)
+    assert list(by_year.keys()) == [2024, 2025]   # 昇順
+    assert by_year[2024]["n_trades"] == 2
+    assert abs(by_year[2024]["total_r"] - 0.5) < 1e-9
+    assert by_year[2025]["n_trades"] == 1
+    assert abs(by_year[2025]["total_r"] - 1.5) < 1e-9
+    print("test_summarize_by_year_groups_by_entry_year OK")
+
+
+def test_summarize_by_year_empty():
+    assert backtest.summarize_by_year([]) == {}
+    print("test_summarize_by_year_empty OK")
+
+
 def test_engine_tp_and_sl():
     """エンジンが TP / SL を正しく検出し、Rの符号が正しいこと"""
     # 注入シグナル戦略: index30で1（ロング）を出す（n>=40の内部ガードを満たす長さで）
@@ -100,6 +121,8 @@ def test_no_lookahead_entry_next_open():
 if __name__ == "__main__":
     test_summarize_basic()
     test_summarize_empty()
+    test_summarize_by_year_groups_by_entry_year()
+    test_summarize_by_year_empty()
     test_engine_tp_and_sl()
     test_no_lookahead_entry_next_open()
     print("\nALL backtest tests passed ✅")

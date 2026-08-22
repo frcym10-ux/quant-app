@@ -81,6 +81,8 @@ def test_backtest_preset_integration():
     assert overall["strategy"] == "⑥週足中期"
     assert not per_symbol.empty
     assert per_symbol.iloc[0]["コード"] == "9999"
+    assert "by_year" in overall
+    assert sum(s["n_trades"] for s in overall["by_year"].values()) == overall["n_trades"]
     print("test_backtest_preset_integration OK", overall)
 
 
