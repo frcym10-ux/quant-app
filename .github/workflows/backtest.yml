@@ -1,0 +1,45 @@
+# 戦略α/βのヒストリカル検証を手動実行するワークフロー
+# スマホからでも「Run workflow」→実行後にジョブのSummaryタブで結果が読める
+# （Pythonのローカル実行環境が無くても使える）。
+name: backtest
+
+on:
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: "検証する戦略（alpha / beta。空欄なら両方）"
+        required: false
+        default: ""
+      period:
+        description: "検証期間（例: 1y, 2y, 3y, 5y）"
+        required: false
+        default: "2y"
+
+jobs:
+  run-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 依存パッケージのインストール
+        run: pip install -r requirements-ci.txt
+
+      - name: バックテスト実行（結果はこのジョブのSummaryに出力）
+        run: |
+          ARGS=()
+          if [ -n "${{ inputs.strategy }}" ]; then ARGS+=("${{ inputs.strategy }}"); fi
+          if [ -n "${{ inputs.period }}" ]; then ARGS+=("${{ inputs.period }}"); fi
+          {
+            echo "## 📊 バックテスト結果"
+            echo '```'
+            python tools/backtest.py "${ARGS[@]}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
