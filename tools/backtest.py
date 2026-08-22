@@ -27,6 +27,20 @@ def _fmt_overall(o: dict) -> str:
     )
 
 
+def _fmt_by_year(by_year: dict) -> str:
+    """年別のトレード成績を1行ずつ整形する（直近の相場でエッジが劣化していないか確認用）"""
+    if not by_year:
+        return ""
+    lines = ["\n  年別（直近の相場でエッジが落ちていないか確認）:"]
+    for year, s in by_year.items():
+        pf = "∞" if s["profit_factor"] == float("inf") else f"{s['profit_factor']:.2f}"
+        lines.append(
+            f"    {year}: {s['n_trades']:>3}件　勝率{s['win_rate']*100:5.1f}%　"
+            f"期待値{s['expectancy_r']:+.3f}R　PF{pf}"
+        )
+    return "\n".join(lines)
+
+
 def main() -> None:
     args = [a for a in sys.argv[1:]]
     keys = [a for a in args if a in backtest.STRATEGIES] or ["alpha", "beta"]
@@ -37,12 +51,16 @@ def main() -> None:
         print(f"\n===== {strat.name}（期間 {period}） =====")
         per_symbol, overall = backtest.backtest_universe(key, period=period)
         print(_fmt_overall(overall))
+        print(_fmt_by_year(overall.get("by_year", {})))
         if not per_symbol.empty:
             print("\n  銘柄別（累計R上位10）:")
             print(per_symbol.head(10).to_string(index=False))
     print(
         "\n注: Rは1トレードあたりのリスク倍率（損切り=-1R, 利確≈+1.5R）。"
         "期待値R>0かつPF>1.3、最大DDが許容範囲なら実運用の検討余地あり。"
+        "\n複数年の平均は『良い年と悪い年を均した数字』なので、年別の直近1〜2年が"
+        "全体平均より弱くなっていないか（アルゴ取引の高速化・地政学リスク等で"
+        "相場の性質が変わっていないか）も必ず確認すること。"
     )
 
 

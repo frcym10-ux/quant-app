@@ -164,6 +164,20 @@ def summarize(trades: list[dict]) -> dict:
     }
 
 
+def summarize_by_year(trades: list[dict]) -> dict[int, dict]:
+    """トレードをエントリー年ごとに分けて集計する（レジーム変化・直近の実力を見るため）
+
+    5年等の長期集計は「良い年と悪い年を均した数字」になりがちで、AIによる高速化した
+    アルゴ取引や地政学リスクなど、直近だけ相場の性質が変わっている可能性を隠してしまう。
+    年別に割ることで、エッジが直近も維持されているか劣化しているかを目視で確認できる。
+    """
+    by_year: dict[int, list[dict]] = {}
+    for t in trades:
+        year = pd.Timestamp(t["entry_date"]).year
+        by_year.setdefault(year, []).append(t)
+    return {year: summarize(ts) for year, ts in sorted(by_year.items())}
+
+
 def backtest_universe(
     strategy_key: str = "alpha",
     data: dict[str, pd.DataFrame] | None = None,
@@ -214,6 +228,7 @@ def backtest_universe(
 
     overall = summarize(all_trades)
     overall["strategy"] = strategy.name
+    overall["by_year"] = summarize_by_year(all_trades)
     per_symbol = (
         pd.DataFrame(rows).sort_values("累計R", ascending=False).reset_index(drop=True)
         if rows else pd.DataFrame()
