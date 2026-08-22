@@ -413,7 +413,9 @@ def main() -> None:
         try:
             weekly = screener.screen_all_presets(
                 list(universe.all_codes().keys()), price_data=data)
-            earn_table = earnings.load_earnings()
+            # J-Quants自動補完はユニバース全体ではなく候補銘柄のみに絞る（API呼び出し数節約）
+            candidate_codes = list(weekly["コード"]) if not weekly.empty else []
+            earn_table = earnings.load_earnings(codes=candidate_codes)
             print(f"週次スクリーナー: {len(weekly)}件")
         except Exception as e:
             print(f"週次スクリーナー失敗（レポートは継続）: {e}")

@@ -4,6 +4,7 @@ modules/screener.py
 """
 from __future__ import annotations
 
+import functools
 import os
 import sys
 
@@ -11,7 +12,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
-from modules import chart_filter, data_fetcher, indicators, order_calc, strategy_alpha, strategy_beta
+from modules import (chart_filter, data_fetcher, indicators, jquants_fundamentals,
+                      order_calc, strategy_alpha, strategy_beta)
 
 # =====================================================================
 # 週次スクリーニング（指示書ステップ6-1）
@@ -267,14 +269,15 @@ def passes_preset6(
     return result
 
 
-def fetch_fundamentals(code: str) -> dict:
-    """yfinanceから財務指標（ROE%・配当利回り%・PER）をベストエフォートで取得する
+@functools.lru_cache(maxsize=256)
+def fetch_fundamentals(code: str, price: float | None = None) -> dict:
+    """財務指標（ROE%・配当利回り%・PER・経常利益変化率）をベストエフォートで取得する
 
-    取れない項目は None。日本株はyfinanceの財務データが欠けることが多いので、
-    その場合は passes_preset6 側で「要確認」扱いになる。
+    J-Quants APIキーが設定されていればそちらを優先し（yfinanceで欠けやすい
+    経常利益変化率も含めて取得できる）、取れなかった項目のみ yfinance で補う。
+    それでも取れない項目は None（passes_preset6 側で「要確認」扱いになる）。
+    同一実行内で6プリセット分呼ばれるため、コード単位でキャッシュする。
     """
-    # ordinary_income_growth（経常利益変化率）は yfinance では取れないため常に None。
-    # プリセット③で「要確認」扱いになる（本来は J-Quants 財務データが必要）。
     result = {"roe": None, "dividend_yield": None, "per": None,
               "ordinary_income_growth": None, "name": None}
     try:
@@ -292,6 +295,15 @@ def fetch_fundamentals(code: str) -> dict:
         result["name"] = info.get("shortName") or info.get("longName")
     except Exception:
         pass
+
+    if settings.JQUANTS_API_KEY and data_fetcher.is_jp_code(code):
+        try:
+            jq = jquants_fundamentals.fetch_fundamentals_jquants(code, price=price)
+            for key in ("roe", "dividend_yield", "per", "ordinary_income_growth"):
+                if jq.get(key) is not None:
+                    result[key] = jq[key]
+        except Exception:
+            pass
     return result
 
 
@@ -430,7 +442,7 @@ def screen_preset(
                 df = data_fetcher.get_cached_or_fetch(code, days)
             fund = (fundamentals_map or {}).get(code)
             if fund is None:
-                fund = fetch_fundamentals(code)
+                fund = fetch_fundamentals(code, price=float(df["close"].iloc[-1]))
 
             df_ind = indicators.calc_all(df)
             common_ok, common_reasons = passes_common_prereq(df, available_cash)

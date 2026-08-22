@@ -4,7 +4,7 @@
 streamlit>=1.35.0
 
 # データ取得
-jquants-api-client>=0.1.0   # J-Quants API（日本株）
+jquants-api-client>=2.0.0   # J-Quants API v2（日本株。ClientV2はv2系のみ提供）
 yfinance>=0.2.40             # 米国株・ETF
 
 # テクニカル指標は modules/indicators.py で pandas/numpy により自前計算

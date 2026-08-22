@@ -42,7 +42,11 @@ jobs:
           HOLDINGS_JSON: ${{ secrets.HOLDINGS_JSON }}
           # 決算予定日の手動登録（任意）: {"6702":"2026-07-30", ...} を入れると
           # 「今週の候補」カードで ±14営業日以内なら「⚠️決算接近」と警告する。
+          # 未登録銘柄はJQUANTS_API_KEY設定時のみJ-Quantsから自動補完する。
           EARNINGS_JSON: ${{ secrets.EARNINGS_JSON }}
+          # J-Quants APIキー（任意）: 設定すると財務指標（ROE・PER・配当利回り・
+          # 経常利益変化率）と決算発表予定日の精度・網羅性が上がる。未設定ならyfinance/手動登録のみ。
+          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
           # アクションがある日の自分宛メール通知用（未設定なら通知はスキップ）
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
