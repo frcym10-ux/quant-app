@@ -1,4 +1,4 @@
-# 戦略α/βのヒストリカル検証を手動実行するワークフロー
+# ヒストリカル検証（バックテスト）を手動実行するワークフロー
 # スマホからでも「Run workflow」→実行後にジョブのSummaryタブで結果が読める
 # （Pythonのローカル実行環境が無くても使える）。
 name: backtest
@@ -6,8 +6,18 @@ name: backtest
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: "検証対象"
+        required: false
+        default: "swing"
+        type: choice
+        options:
+          - swing        # 戦略α/β（swing_scannerの日々のシグナル）
+          - screener      # 週次スクリーナー6プリセット（今週の候補ロジック）
       strategy:
-        description: "検証する戦略（alpha / beta。空欄なら両方）"
+        description: >-
+          target=swing のとき: alpha / beta（空欄なら両方）。
+          target=screener のとき: プリセットID ①〜⑥（空欄なら全6つ）
         required: false
         default: ""
       period:
@@ -35,10 +45,15 @@ jobs:
           ARGS=()
           if [ -n "${{ inputs.strategy }}" ]; then ARGS+=("${{ inputs.strategy }}"); fi
           if [ -n "${{ inputs.period }}" ]; then ARGS+=("${{ inputs.period }}"); fi
+          if [ "${{ inputs.target }}" = "screener" ]; then
+            SCRIPT=tools/backtest_screener.py
+          else
+            SCRIPT=tools/backtest.py
+          fi
           {
-            echo "## 📊 バックテスト結果"
+            echo "## 📊 バックテスト結果（${{ inputs.target }}）"
             echo '```'
-            python tools/backtest.py "${ARGS[@]}"
+            python "$SCRIPT" "${ARGS[@]}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
         env:
