@@ -33,8 +33,11 @@ jobs:
         run: python tools/publish_report.py --weekly
         env:
           # 決算予定日の手動登録（任意）: {"6702":"2026-07-30", ...} を Secrets に入れると
-          # 「⚠️決算接近」判定に使われる。未設定なら各銘柄「決算日未登録（要手動確認）」表示。
+          # 「⚠️決算接近」判定に使われる。未登録銘柄はJQUANTS_API_KEY設定時のみ自動補完する。
           EARNINGS_JSON: ${{ secrets.EARNINGS_JSON }}
+          # J-Quants APIキー（任意）: 設定すると財務指標（ROE・PER・配当利回り・
+          # 経常利益変化率）と決算発表予定日の精度・網羅性が上がる。未設定ならyfinance/手動登録のみ。
+          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
           # 保有銘柄・通知は swing-report と共通（未設定ならスキップ）
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
