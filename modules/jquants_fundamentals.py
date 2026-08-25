@@ -90,6 +90,111 @@ def fetch_fundamentals_jquants(code: str, price: float | None = None) -> dict:
     return result
 
 
+def fetch_fundamentals_at_date(code: str, date: dt.date | str, price: float | None = None) -> dict:
+    """指定日時点で開示済みの最新財務データを返す（バックテスト用）
+
+    DiscDate <= date の中で最も新しいレコードを使い、
+    fetch_fundamentals_jquants と同じキーの dict を返す。
+    """
+    result = {"roe": None, "dividend_yield": None, "per": None, "ordinary_income_growth": None}
+    try:
+        client = _get_client()
+        df = client.get_fin_summary(code=code)
+        if df is None or df.empty:
+            return result
+        df = df.sort_values("DiscDate").reset_index(drop=True)
+        target = pd.Timestamp(date)
+        past = df[pd.to_datetime(df["DiscDate"]) <= target]
+        if past.empty:
+            return result
+        latest = past.iloc[-1]
+
+        result["roe"] = _to_pct(latest["ROE"])
+
+        if price:
+            div = latest["FDivAnn"]
+            if div is None or pd.isna(div):
+                div = latest["DivAnn"]
+            if div is not None and not pd.isna(div) and float(price) > 0:
+                result["dividend_yield"] = round(float(div) / float(price) * 100, 2)
+
+            feps = latest["FEPS"]
+            if feps is not None and not pd.isna(feps) and float(feps) != 0:
+                result["per"] = round(float(price) / float(feps), 1)
+
+        cur_type = latest["CurPerType"]
+        cur_odp = latest["OdP"]
+        if pd.notna(cur_type) and cur_odp is not None and pd.notna(cur_odp):
+            same_type = past[past["CurPerType"] == cur_type]
+            if len(same_type) >= 2:
+                prior_odp = same_type.iloc[-2]["OdP"]
+                if prior_odp is not None and pd.notna(prior_odp) and float(prior_odp) != 0:
+                    result["ordinary_income_growth"] = round(
+                        (float(cur_odp) - float(prior_odp)) / abs(float(prior_odp)) * 100, 1
+                    )
+    except Exception:
+        pass
+    return result
+
+
+_fin_cache: dict[str, pd.DataFrame | None] = {}
+
+
+def _get_fin_summary_cached(code: str) -> pd.DataFrame | None:
+    """get_fin_summary を銘柄単位でキャッシュする（バックテスト中の連続呼び出し用）"""
+    if code in _fin_cache:
+        return _fin_cache[code]
+    try:
+        client = _get_client()
+        df = client.get_fin_summary(code=code)
+        if df is not None and not df.empty:
+            df = df.sort_values("DiscDate").reset_index(drop=True)
+            _fin_cache[code] = df
+        else:
+            _fin_cache[code] = None
+    except Exception:
+        _fin_cache[code] = None
+    return _fin_cache[code]
+
+
+def lookup_fund_at_date(code: str, date, price: float | None = None) -> dict:
+    """キャッシュ済みの財務データから指定日時点のファンダメンタルズを返す（バックテスト高速版）"""
+    result = {"roe": None, "dividend_yield": None, "per": None, "ordinary_income_growth": None}
+    df = _get_fin_summary_cached(code)
+    if df is None:
+        return result
+    target = pd.Timestamp(date)
+    past = df[pd.to_datetime(df["DiscDate"]) <= target]
+    if past.empty:
+        return result
+    latest = past.iloc[-1]
+
+    result["roe"] = _to_pct(latest["ROE"])
+
+    if price:
+        div = latest["FDivAnn"]
+        if div is None or pd.isna(div):
+            div = latest["DivAnn"]
+        if div is not None and not pd.isna(div) and float(price) > 0:
+            result["dividend_yield"] = round(float(div) / float(price) * 100, 2)
+
+        feps = latest["FEPS"]
+        if feps is not None and not pd.isna(feps) and float(feps) != 0:
+            result["per"] = round(float(price) / float(feps), 1)
+
+    cur_type = latest["CurPerType"]
+    cur_odp = latest["OdP"]
+    if pd.notna(cur_type) and cur_odp is not None and pd.notna(cur_odp):
+        same_type = past[past["CurPerType"] == cur_type]
+        if len(same_type) >= 2:
+            prior_odp = same_type.iloc[-2]["OdP"]
+            if prior_odp is not None and pd.notna(prior_odp) and float(prior_odp) != 0:
+                result["ordinary_income_growth"] = round(
+                    (float(cur_odp) - float(prior_odp)) / abs(float(prior_odp)) * 100, 1
+                )
+    return result
+
+
 def fetch_earnings_date_jquants(code: str) -> dt.date | None:
     """J-Quants /fins/earnings-date から直近有効な決算発表予定日を取得する（ベストエフォート）"""
     try:

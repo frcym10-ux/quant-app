@@ -44,7 +44,7 @@ P3_ORDINARY_GROWTH_MIN = 5.0                 # 経常利益変化率（前年比
 P3_PER_MIN, P3_PER_MAX = 8.0, 20.0
 
 # ----- プリセット④ ボリンジャー逆張り（日足）-----
-P4_RSI_MIN, P4_RSI_MAX = 25.0, 35.0          # -2σ〜-3σ到達＋株価>75日MA と併用
+P4_RSI_MIN, P4_RSI_MAX = 25.0, 40.0          # -2σ〜-3σ到達と併用（75日MAゲート廃止）
 
 # ----- プリセット⑤ GC×高配当（週足チャート）-----
 P5_DIV_YIELD_MIN = 3.0
@@ -366,7 +366,7 @@ def _preset3(df: pd.DataFrame, fund: dict):
 
 
 def _preset4(df: pd.DataFrame, fund: dict):
-    """④ ボリンジャー逆張り：RSI25〜35 / BB -2σ〜-3σ到達 / 株価>75日MA"""
+    """④ ボリンジャー逆張り：RSI25〜40 / BB -2σ〜-3σ到達"""
     latest = df.iloc[-1]
     rsi = float(latest["rsi"]); close = float(latest["close"])
     bb_lower = float(latest["bb_lower"]); bb_mid = float(latest["bb_mid"])  # bb_lower = -2σ
@@ -374,9 +374,8 @@ def _preset4(df: pd.DataFrame, fund: dict):
     lower3 = bb_lower - sigma  # -3σ
     touched = (lower3 <= close <= bb_lower) if sigma > 0 else False
     checks = {
-        "RSI 25〜35": P4_RSI_MIN <= rsi <= P4_RSI_MAX,
+        "RSI 25〜40": P4_RSI_MIN <= rsi <= P4_RSI_MAX,
         "BB -2σ〜-3σ到達": bool(touched),
-        "株価>75日MA": _above_sma75(latest),
     }
     return checks, f"RSI{rsi:.0f} / 現在値{close:.0f}（-2σ{bb_lower:.0f}）", None
 
@@ -405,7 +404,7 @@ def _preset6(df: pd.DataFrame, fund: dict):
 # ========== プリセット・レジストリ ==========
 PRESET_NAMES = {
     "①": "①押し目", "②": "②ブレイク", "③": "③業績モメンタム",
-    "④": "④ボリンジャー逆張り", "⑤": "⑤GC×高配当", "⑥": "⑥週足中期",
+    "④": "④BB逆張り", "⑤": "⑤GC×高配当", "⑥": "⑥週足中期",
 }
 PRESET_TIMEFRAME = {  # チャート判定に使う移動平均（日足=75日 / 週足=26週）
     "①": "daily", "②": "daily", "③": "daily", "④": "daily", "⑤": "weekly", "⑥": "weekly",

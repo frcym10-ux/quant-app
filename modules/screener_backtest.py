@@ -8,10 +8,9 @@ modules/backtest.py と同じイベントドリブン・エンジン（backtest_
 実運用とバックテストでスクリーニング条件が食い違う心配がない。
 
 制約（実運用との違い・簡略化。11月の実績照合時に念頭に置くこと）:
-  1. 財務指標（ROE・PER・配当利回り・経常利益変化率）はその時点に遡って取得できないため、
-     バックテストでは常に未取得（fund={}）として扱う＝ファンダ条件は毎回「要確認」扱いで
-     素通りする。つまりこの検証は各プリセットの「チャート・テクニカル条件」の有効性のみを
-     測るものであり、⑤GC×高配当・⑥週足中期のファンダ部分の有効性は評価できていない。
+  1. J-Quants APIキーが設定済みの場合、/fins/summary の過去開示データを使って
+     各時点のROE・PER・配当利回り・経常利益変化率を再現する。未設定時は従来どおり
+     fund={} で素通り（テクニカル条件のみの検証）。
   2. エントリーは modules/backtest.py と同じ「シグナルが出た翌営業日の始値」で約定した
      と仮定する（実際の指値・ブレイク水準へのタッチを待つシミュレーションはしない簡略化）。
   3. 週足プリセット（⑤⑥）は実運用と同じ週次カデンスで判定する（毎営業日ではなくWEEKLY_STRIDE
@@ -28,17 +27,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from config import settings
 from modules import backtest, chart_filter, indicators, order_calc, screener
 
+_USE_HIST_FUND = False
+try:
+    from modules import jquants_fundamentals
+    if settings.JQUANTS_API_KEY and "ここに" not in settings.JQUANTS_API_KEY:
+        _USE_HIST_FUND = True
+except Exception:
+    pass
+
 # 75日MA・26週MA（≒130営業日）・52週高値（252営業日）すべてに十分な履歴を確保する
 MIN_LOOKBACK = 260
 WEEKLY_STRIDE = 5  # 週足プリセットは約5営業日（1週間）おきに判定する
 
 
-def preset_signal(preset_id: str, df: pd.DataFrame) -> pd.Series:
+def preset_signal(preset_id: str, df: pd.DataFrame, code: str = "") -> pd.Series:
     """指定プリセットの過去シグナルを返す（1=その日成立、翌営業日始値でエントリーする想定）
 
     Args:
         preset_id: "①"〜"⑥"
         df: date/open/high/low/close/volume を持つ日足DataFrame（十分な履歴が必要）
+        code: 銘柄コード。J-Quants APIキーがあれば過去の財務データを使って評価する
     """
     df = df.reset_index(drop=True)
     df_ind = indicators.calc_all(df)
@@ -49,13 +57,22 @@ def preset_signal(preset_id: str, df: pd.DataFrame) -> pd.Series:
     if n <= MIN_LOOKBACK:
         return sig
 
+    use_fund = _USE_HIST_FUND and bool(code)
+
     stride = WEEKLY_STRIDE if timeframe == "weekly" else 1
     for i in range(MIN_LOOKBACK, n, stride):
         window = df_ind.iloc[: i + 1]
         common_ok, _ = screener.passes_common_prereq(window, settings.AVAILABLE_CASH)
         if not common_ok:
             continue
-        specific, _, _ = evaluator(window, {})  # fund={} → ファンダ条件は常に「未取得」で素通り
+        if use_fund:
+            row = window.iloc[-1]
+            d = row.get("date", None)
+            price = float(row["close"])
+            fund = jquants_fundamentals.lookup_fund_at_date(code, d, price) if d is not None else {}
+        else:
+            fund = {}
+        specific, _, _ = evaluator(window, fund)
         checks = {"共通前提": common_ok, **specific}
         if not screener._finalize(checks)["pass"]:
             continue
@@ -83,13 +100,14 @@ def backtest_preset(
     """1プリセットをユニバース全銘柄で検証し、銘柄別成績と全体集計を返す"""
     names = names or {}
     sl_mult, tp_mult = _sl_tp_mult(preset_id)
-    strategy = backtest.Strategy(
-        preset_id, screener.PRESET_NAMES[preset_id], lambda d: preset_signal(preset_id, d)
-    )
 
     all_trades: list[dict] = []
     rows = []
     for code, df in data.items():
+        strategy = backtest.Strategy(
+            preset_id, screener.PRESET_NAMES[preset_id],
+            lambda d, c=code, pid=preset_id: preset_signal(pid, d, code=c),
+        )
         try:
             trades = backtest.backtest_symbol(df, strategy, sl_mult=sl_mult, tp_mult=tp_mult)
         except Exception:

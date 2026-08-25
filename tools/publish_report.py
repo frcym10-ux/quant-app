@@ -98,6 +98,15 @@ footer { color: #666; font-size: .72rem; margin-top: 24px; line-height: 1.6; }
 .pill.ob { background: #341818; color: #ff7676; }
 .pill.sig { background: #3a2440; color: #e6a8ff; font-weight: 700; }
 
+/* ===== 相場レジーム ===== */
+.regime-banner { background: #1a1f2b; border: 1px solid #2a3142; border-radius: 10px;
+                 padding: 10px 14px; margin-bottom: 12px; }
+.regime-banner .rlabel { font-size: .92rem; font-weight: 700; margin-bottom: 4px; }
+.regime-banner .radvice { font-size: .78rem; color: #aab; line-height: 1.5; }
+.regime-banner .rstats { font-size: .72rem; color: #889; margin-top: 4px; }
+.regime-banner.rough { border-color: #7a2a2a; }
+.regime-banner.trend { border-color: #1f6b3f; }
+
 /* ===== 今週の候補（週次スクリーナー） ===== */
 .badge-dup { font-size: .7rem; font-weight: 700; color: #ffd479; background: #3a3320;
              border-radius: 999px; padding: 1px 7px; }
@@ -293,7 +302,24 @@ def _market_banner(ms) -> str:
         )
     if not cards:
         return ""
-    return "<div class='market'>" + "".join(cards) + "</div>"
+    html = "<div class='market'>" + "".join(cards) + "</div>"
+
+    regime = None
+    for market in ("日本", "米国"):
+        info = ms.get(market)
+        if info and "regime" in info:
+            regime = info["regime"]
+            break
+    if regime:
+        rcls = {"荒れ相場": "rough", "トレンド相場": "trend"}.get(regime["type"], "")
+        html += (
+            f"<div class='regime-banner {rcls}'>"
+            f"<div class='rlabel'>{_esc(regime['label'])}</div>"
+            f"<div class='radvice'>{_esc(regime['advice'])}</div>"
+            f"<div class='rstats'>20日ボラ {regime['volatility_20d']}%（年率換算） "
+            f"／ 50日MA傾き {regime['ma50_slope_5d']:+.2f}%</div></div>"
+        )
+    return html
 
 
 def _weekly_card(r, earnings_table) -> str:
