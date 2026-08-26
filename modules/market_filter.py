@@ -69,6 +69,8 @@ def _status_from_close(close: pd.Series) -> dict | None:
         light, trend = "🔴", "逆風（リスクオフ）"
         comment = "指数が200日線を割れた下落基調。新規ロングは見送りか、ごく小さく。"
 
+    regime = _classify_regime(close)
+
     return {
         "light": light,
         "trend": trend,
@@ -79,6 +81,48 @@ def _status_from_close(close: pd.Series) -> dict | None:
         "above_mid": above_mid,
         "above_long": above_long,
         "sma_long_window": long_window,
+        "regime": regime,
+    }
+
+
+def _classify_regime(close: pd.Series) -> dict:
+    """バックテスト年別分析で判明したレジーム分類（2022型 vs 2023型）を判定する
+
+    20日ボラティリティ（年率換算）と50日MAの傾きから、現在の相場が
+    「素直なトレンド相場（シグナルの信頼度高め）」か
+    「荒れ相場（シグナルの信頼度低め）」かを判定する。
+    """
+    import numpy as np
+    n = len(close)
+    ret = close.pct_change().dropna()
+
+    vol_20 = float(ret.tail(20).std() * np.sqrt(252) * 100) if n >= 22 else 0.0
+
+    if n >= SMA_MID + 5:
+        sma50 = close.rolling(SMA_MID).mean()
+        slope = float((sma50.iloc[-1] - sma50.iloc[-6]) / sma50.iloc[-6] * 100) if sma50.iloc[-6] != 0 else 0.0
+    else:
+        slope = 0.0
+
+    if vol_20 > 25 or (vol_20 > 20 and slope < -1):
+        regime_type = "荒れ相場"
+        label = "⚡ 荒れ相場（2022年型）"
+        advice = "ボラティリティが高く方向感が不安定。シグナルの信頼度は低め。ポジションサイズを通常の半分〜2/3に抑え、損切りは厳守。"
+    elif vol_20 < 15 and slope > 0.5:
+        regime_type = "トレンド相場"
+        label = "📈 素直なトレンド相場（2023年型）"
+        advice = "ボラティリティが低く方向が素直。シグナルの信頼度は高め。通常サイズでエントリーしてよい。"
+    else:
+        regime_type = "通常"
+        label = "➡️ 通常の相場環境"
+        advice = "特段の警戒は不要だが、決算シーズンや重要イベント前後は注意。"
+
+    return {
+        "type": regime_type,
+        "label": label,
+        "advice": advice,
+        "volatility_20d": round(vol_20, 1),
+        "ma50_slope_5d": round(slope, 2),
     }
 
 
