@@ -303,7 +303,7 @@ def _resolve_targets(theme_filter: list[str] | None) -> dict[str, str]:
 
 
 def _apply_market_filter(r: dict, market_status: dict | None) -> dict:
-    """全体相場が逆風（200日線割れ）なら新規ロング候補を格下げ・減点する
+    """全体相場が逆風（200日線割れ、または急落ブレーカー発動）なら新規ロング候補を格下げ・減点する
 
     ロング偏重の運用では、指数が下落基調のときにエントリーを控えるだけで
     成績の安定性が大きく改善する。逆風時は候補→監視に格下げし、スコアも下げる。
@@ -315,10 +315,18 @@ def _apply_market_filter(r: dict, market_status: dict | None) -> dict:
         r["スコア"] = round(max(float(r["スコア"]) - 12, 0), 0)
         if r["種別"] == "候補":
             r["種別"] = "監視"
-        r["根拠"] += (
-            " ／ ⚠️ 全体相場が逆風（指数が200日線割れ）。"
-            "無理な新規ロングは見送り、入るならごく小さく"
-        )
+        if info.get("is_crash"):
+            ret_5d = info.get("ret_5d")
+            ret_txt = f"直近5営業日で{ret_5d:.1f}%" if ret_5d is not None else "直近5営業日で急落"
+            r["根拠"] += (
+                f" ／ ⚠️ 全体相場が急落（{ret_txt}、200日線はまだ割れていない）。"
+                "無理な新規ロングは見送り、入るならごく小さく"
+            )
+        else:
+            r["根拠"] += (
+                " ／ ⚠️ 全体相場が逆風（指数が200日線割れ）。"
+                "無理な新規ロングは見送り、入るならごく小さく"
+            )
     return r
 
 
