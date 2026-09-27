@@ -50,6 +50,36 @@ def test_apply_market_filter_demotes_long():
     print("test_apply_market_filter_demotes_long OK")
 
 
+def test_status_crash_breaker_overrides_200ma():
+    """200日線はまだ割れていない（長期トレンドは崩れていない）のに、
+    直近5営業日の急落で🔴に格下げされること
+
+    2026年3月のイラン情勢急変の再現検証で判明した弱点への回帰テスト：
+    指数が200日線を大きく上回ったまま、直近5日で-5%を超える急落が起きた場合を再現する。
+    """
+    base = np.linspace(100, 300, 260)  # 一貫した上昇（200日線を大きく上回る水準）
+    close = base.copy()
+    close[-5:] = close[-6] * np.linspace(1.0, 0.90, 5)  # 直近5日で-10%の急落
+    s = market_filter._status_from_close(pd.Series(close))
+    assert s["above_long"], s   # 200日線はまだ上のまま（長期トレンドは崩れていない）
+    assert s["is_crash"] is True, s
+    assert s["ret_5d"] <= market_filter.CRASH_RETURN_THRESHOLD, s
+    assert s["light"] == "🔴", s
+    assert "急落" in s["trend"], s
+    print("test_status_crash_breaker_overrides_200ma OK")
+
+
+def test_status_normal_pullback_not_crash():
+    """5日で-5%未満の通常の押しなら急落ブレーカーは発動しないこと"""
+    base = np.linspace(100, 300, 260)
+    close = base.copy()
+    close[-5:] = close[-6] * np.linspace(1.0, 0.97, 5)  # 直近5日で-3%程度の軽い押し
+    s = market_filter._status_from_close(pd.Series(close))
+    assert s["is_crash"] is False, s
+    assert s["light"] == "🟢", s
+    print("test_status_normal_pullback_not_crash OK")
+
+
 def test_apply_market_filter_keeps_on_risk_on():
     """順風(🟢)のときは格下げしないこと"""
     ms = {"米国": {"light": "🟢", "trend": "順風"}}
@@ -66,5 +96,7 @@ if __name__ == "__main__":
     test_status_risk_off()
     test_status_insufficient()
     test_apply_market_filter_demotes_long()
+    test_status_crash_breaker_overrides_200ma()
+    test_status_normal_pullback_not_crash()
     test_apply_market_filter_keeps_on_risk_on()
     print("\nALL market_filter tests passed ✅")

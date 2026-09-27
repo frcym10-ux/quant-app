@@ -11,6 +11,16 @@ modules/market_filter.py
   🟢 順風   : 指数 > 200日線 かつ 指数 > 50日線（短期も長期も上）
   🟡 中立   : 指数 > 200日線 だが 50日線割れ（短期調整中）
   🔴 逆風   : 指数 < 200日線（長期下落基調 → 新規ロングは慎重に）
+
+急落ブレーカー（修正: 2026-09-27・16ヶ月の再現バックテストで判明した弱点への対応）:
+  200日線ベースの判定は反応が遅く、指数がまだ200日線の上（🟢/🟡）にいる間に
+  数日〜2週間で急落する地政学ショック等を検知できない。実際、2026年3月の
+  イラン情勢急変時は🟢判定のまま個別銘柄の「トレンド押し目」が連続で損切りに
+  刺さり、月間で-15.5R（-37.8万円）・全期間の最大ドローダウン(-28.5R)の
+  主因になった（2025/6〜2026/9の再現検証より）。
+  これを受けて、200日線判定とは別に「直近5営業日の騰落率」を見る短期の
+  急落検知を追加する。5日騰落率が CRASH_RETURN_THRESHOLD 以下なら、
+  200日線上の位置に関わらず🔴（新規ロング停止）に強制的に格下げする。
 """
 from __future__ import annotations
 
@@ -29,6 +39,15 @@ INDICES: dict[str, tuple[str, str]] = {
 
 SMA_LONG = 200   # 長期トレンドの基準
 SMA_MID = 50     # 短期トレンドの基準
+
+# ========== 急落ブレーカー ==========
+# 200日線判定より速く反応させるための短期ショック検知。
+# 2025/6〜2026/9の再現検証では、日経225の5日騰落率が-5%を下回ったのは
+# 2026/3/4〜3/9（イラン情勢急変。当時は指数がまだ200日線の上で🟢のままだった）
+# と、2026年7月末の調整局面のみで、それ以外の期間では発生しておらず
+# 誤検知は少ないと確認済み。
+CRASH_RETURN_WINDOW = 5       # 判定に使う営業日数
+CRASH_RETURN_THRESHOLD = -5.0  # このパーセントを下回ったら急落と判定（%）
 
 
 def _fetch_close(symbol: str, period: str = "2y") -> pd.Series | None:
@@ -69,6 +88,22 @@ def _status_from_close(close: pd.Series) -> dict | None:
         light, trend = "🔴", "逆風（リスクオフ）"
         comment = "指数が200日線を割れた下落基調。新規ロングは見送りか、ごく小さく。"
 
+    # --- 急落ブレーカー：200日線判定より速く効かせる ---
+    ret_window = None
+    is_crash = False
+    if len(close) > CRASH_RETURN_WINDOW:
+        prev = float(close.iloc[-1 - CRASH_RETURN_WINDOW])
+        if prev:
+            ret_window = (last / prev - 1) * 100
+            is_crash = ret_window <= CRASH_RETURN_THRESHOLD
+
+    if is_crash and light != "🔴":
+        light, trend = "🔴", "急落（短期ショック）"
+        comment = (
+            f"直近{CRASH_RETURN_WINDOW}営業日で{ret_window:.1f}%の急落。"
+            "200日線はまだ割れていないが、短期の急変動を優先して新規ロングは停止。"
+        )
+
     regime = _classify_regime(close)
 
     return {
@@ -82,6 +117,8 @@ def _status_from_close(close: pd.Series) -> dict | None:
         "above_long": above_long,
         "sma_long_window": long_window,
         "regime": regime,
+        "is_crash": is_crash,
+        "ret_5d": round(ret_window, 2) if ret_window is not None else None,
     }
 
 
